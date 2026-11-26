@@ -129,6 +129,7 @@ function enviarColillas(planillaId, token) {
       + '<tr><td colspan="2" style="padding:10px 0 2px;font-weight:bold;color:#1B365D">Deducciones</td></tr>'
       + fila('INSS laboral', e.inss, true) + fila('IR', e.ir, true)
       + deducciones.map(n => fila(n.concepto + (n.detalle ? ' · ' + n.detalle : ''), n.monto, true)).join('')
+      + (Number(e.ahorro) > 0 ? fila('Plan de ahorro (' + e.ahorro_porcentaje + '%)', e.ahorro, true) : '')
       + '<tr><td style="padding:8px 0;border-top:2px solid #1B365D;font-size:16px"><b>Neto depositado</b></td><td style="padding:8px 0;border-top:2px solid #1B365D;text-align:right;font-size:16px"><b>' + c$(e.neto) + '</b></td></tr>'
       + '</table>';
     try {
@@ -137,11 +138,13 @@ function enviarColillas(planillaId, token) {
         to: e.correo, name: e.nombre, subject: (pl.tipo === 'liquidacion' ? 'Liquidación: ' : pl.tipo === 'aguinaldo' ? 'Aguinaldo: ' : 'Colilla de pago: ') + pl.descripcion,
         htmlBody: plantillaCorreo_({
           titulo: pl.tipo === 'liquidacion' ? 'Liquidación final' : pl.tipo === 'aguinaldo' ? 'Aguinaldo' : 'Colilla de pago',
-          intro: 'Hola ' + esc(String(e.nombre).split(' ')[0]) + ', este es el detalle de tu pago de la ' + esc(pl.descripcion).toLowerCase() + '.',
+          intro: 'Hola ' + String(e.nombre).split(' ')[0] + ', este es el detalle de: ' + pl.descripcion + '.',   // la plantilla escapa el texto
           estado: { texto: 'Pagado el ' + f(pl.fecha_pagado), color: '#1E7B45' },
-          filas: [['Período', f(pl.desde) + ' al ' + f(pl.hasta)], ['Cargo', esc(e.cargo || '')], ['Cuenta BANPRO', esc(e.cuenta || '—')]],
+          filas: [['Período', f(pl.desde) + ' al ' + f(pl.hasta)], ['Cargo', e.cargo || ''], ['Cuenta BANPRO', e.cuenta || '—']],
           bloque: bloque,
-          nota: 'Saldo de vacaciones: ' + Number(e.vacaciones || 0).toFixed(2) + ' días. También puedes ver tu pago del mes en la pestaña "Mi pago" de esta app. Si algo no coincide, escribe a Recursos Humanos.'
+          nota: (Number(e.ahorro_afc) > 0 ? 'AFC aportó ' + c$(e.ahorro_afc) + ' a tu plan de ahorro. ' : '')
+            + (Number(e.ahorro_saldo) > 0 ? 'Saldo en tu plan de ahorro: ' + c$(e.ahorro_saldo) + '. ' : '')
+            + 'Saldo de vacaciones: ' + Number(e.vacaciones || 0).toFixed(2) + ' días. También puedes ver tu pago del mes en la pestaña "Mi pago" de esta app. Si algo no coincide, escribe a Recursos Humanos.'
         })
       });
       enviados++; detalle.push({ nombre: e.nombre, estado: 'enviado' });
