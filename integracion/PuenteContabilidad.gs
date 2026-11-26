@@ -67,3 +67,21 @@ function activarEnvioDiario() {
   ScriptApp.newTrigger('enviarAContabilidad').timeBased().everyDays(1).atHour(22).create();
   return 'Envío diario activado (10 p. m.)';
 }
+
+// "Mi pago" en la app: salario, deducciones y neto del mes del trabajador que
+// inició sesión. Solo consulta su propio correo; nadie ve el pago de otro.
+// (La pestaña "Mi pago" y la función cargarPago() están en Index.html del marcaje.)
+function miPago(token, anio, mes) {
+  const e = sesionEmp_(token);
+  const p = PropertiesService.getScriptProperties();
+  const anon = p.getProperty('AFC_ANON'), clave = p.getProperty('AFC_CLAVE');
+  if (!anon || !clave) throw new Error('La consulta de pago todavía no está configurada.');
+  const base = p.getProperty('AFC_URL') || 'https://qrjhpkicapbtnzagbnsx.supabase.co/rest/v1/rpc/recibir_marcaje';
+  const r = UrlFetchApp.fetch(base.replace(/recibir_marcaje$/, 'pago_colaborador'), {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { apikey: anon, Authorization: 'Bearer ' + anon },
+    payload: JSON.stringify({ p_clave: clave, p_correo: e.correo, p_anio: Number(anio), p_mes: Number(mes) })
+  });
+  if (r.getResponseCode() >= 300) throw new Error('No se pudo consultar tu pago. Intenta más tarde.');
+  return JSON.parse(r.getContentText());
+}
