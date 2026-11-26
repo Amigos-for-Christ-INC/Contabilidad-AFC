@@ -134,6 +134,9 @@ dialog .pie{display:flex;justify-content:space-between;gap:8px;padding:14px 22px
   .barra-movil img{height:30px}
   .barra-movil button{background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:6px;padding:5px 10px}
   main{padding:18px 16px 60px}
+  .rejilla{grid-template-columns:1fr}
+  .rejilla > *{grid-column:1 / -1 !important}
+  .cabecera .acciones{width:100%}
 }
 @media print{
   body{background:#fff}
@@ -177,7 +180,21 @@ const rangoMes = (base = hoy()) => { const [y, m] = base.split('-').map(Number);
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const TIPOS_ASIENTO = { diario: 'Diario', ingreso: 'Ingreso', egreso: 'Egreso', ajuste: 'Ajuste', apertura: 'Apertura', cierre: 'Cierre' };
 const TIPOS_CUENTA = { activo: 'Activo', pasivo: 'Pasivo', patrimonio: 'Patrimonio', ingreso: 'Ingreso', costo: 'Costo', gasto: 'Gasto' };
-const ROLES = { admin: 'Administrador', contador: 'Contador', consulta: 'Consulta' };
+const PERMISOS = [
+  ['contabilidad.ver', 'Contabilidad', 'Ver catálogo, asientos y reportes contables', 'Ver contabilidad'],
+  ['contabilidad.editar', 'Contabilidad', 'Registrar asientos, catálogo de cuentas, centros y tipos de cambio', 'Registrar asientos'],
+  ['contabilidad.periodos', 'Contabilidad', 'Cerrar y reabrir meses', 'Cerrar meses'],
+  ['inventario.ver', 'Inventario', 'Ver existencias, movimientos y kardex', 'Ver inventario'],
+  ['inventario.editar', 'Inventario', 'Registrar entradas, salidas, traslados y ajustes', 'Registrar movimientos'],
+  ['inventario.anular', 'Inventario', 'Anular movimientos aplicados', 'Anular movimientos'],
+  ['inventario.catalogo', 'Inventario', 'Productos, unidades, categorías y bodegas', 'Productos y bodegas'],
+  ['inventario.todas_bodegas', 'Inventario', 'Trabajar en todas las bodegas (si no, solo en las asignadas)', 'Todas las bodegas'],
+  ['admin.usuarios', 'Administración', 'Usuarios, roles y bitácora', 'Usuarios y roles']
+];
+const TIPOS_MOV = { entrada: 'Entrada', salida: 'Salida', traslado: 'Traslado', ajuste: 'Ajuste' };
+const PREFIJO_MOV = { entrada: 'E', salida: 'S', traslado: 'T', ajuste: 'A' };
+const docMov = m => m.numero ? `${PREFIJO_MOV[m.tipo]}-${m.anio}-${String(m.numero).padStart(4, '0')}` : 'Borrador';
+const fmtQ = n => (n === null || n === undefined || n === '') ? '' : Number(n).toLocaleString('es-NI', { maximumFractionDigits: 4 });
 const ordenCodigo = (a, b) => { const x = a.codigo.split('.').map(Number), y = b.codigo.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] ?? -1) - (y[i] ?? -1); if (d) return d; } return 0; };
 
 function avisar(msg, tipo = 'ok') {
@@ -199,6 +216,17 @@ function mensajeError(e) {
     [/centros_costo_codigo_key/, 'Ya existe un centro de costo con ese código'],
     [/asiento_lineas_cuenta_id_fkey|cuentas_padre_id_fkey/, 'No se puede eliminar: tiene movimientos o subcuentas. Puede desactivarla.'],
     [/asiento_lineas_centro_costo_id_fkey/, 'No se puede eliminar: el centro de costo tiene movimientos. Puede desactivarlo.'],
+    [/productos_codigo_key/, 'Ya existe un producto con ese código'],
+    [/bodegas_codigo_key/, 'Ya existe una bodega con ese código'],
+    [/unidades_codigo_key/, 'Ya existe una unidad con ese código'],
+    [/categorias_producto_nombre_key/, 'Ya existe una categoría con ese nombre'],
+    [/roles_nombre_key/, 'Ya existe un rol con ese nombre'],
+    [/producto_presentaciones_producto_id_unidad_id_key/, 'Hay dos presentaciones con la misma unidad'],
+    [/(inv_movimiento_lineas|inv_kardex|existencias)_producto_id_fkey/, 'No se puede eliminar: el producto tiene movimientos. Puede desactivarlo.'],
+    [/(inv_movimientos|existencias|inv_kardex)_bodega(_destino)?_id_fkey/, 'No se puede eliminar: la bodega tiene movimientos. Puede desactivarla.'],
+    [/(productos|producto_presentaciones|inv_movimiento_lineas)_unidad_id_fkey/, 'No se puede eliminar: la unidad está en uso'],
+    [/productos_categoria_id_fkey/, 'No se puede eliminar: la categoría tiene productos'],
+    [/bodegas_cuenta_inventario_id_fkey|inv_parametros_cuenta/, 'No se puede eliminar: la cuenta la usa el inventario'],
     [/row-level security|permission denied/i, 'No tiene permiso para esta acción'],
     [/Failed to fetch|NetworkError/i, 'No hay conexión con el servidor']
   ];
@@ -216,10 +244,16 @@ function csv(nombre, filas) {
 }
 
 // ---------- estado ----------
-let sb = null, yo = null;
-const cache = { cuentas: [], centros: [], perfiles: [] };
-const editor = () => yo && ['admin', 'contador'].includes(yo.rol);
-const admin = () => yo && yo.rol === 'admin';
+let sb = null, yo = null, permisos = [];
+const cache = { cuentas: [], centros: [], perfiles: [], roles: [], bodegas: [], misBodegas: [], unidades: [], categorias: [], presentaciones: [], productos: [] };
+const puede = p => permisos.includes(p);
+const editor = () => puede('contabilidad.editar');
+const admin = () => puede('admin.usuarios');
+const nombreRol = id => cache.roles.find(r => r.id === id)?.nombre || 'Sin rol';
+const bodegaPorId = id => cache.bodegas.find(b => b.id === Number(id));
+const productoPorId = id => cache.productos.find(p => p.id === Number(id));
+const unidadPorId = id => cache.unidades.find(u => u.id === Number(id));
+const etiquetaProducto = p => p ? `${p.codigo} — ${p.nombre}` : '';
 const cuentaPorId = id => cache.cuentas.find(c => c.id === Number(id));
 const etiquetaCuenta = c => c ? `${c.codigo} — ${c.nombre}` : '';
 const nombrePerfil = id => cache.perfiles.find(p => p.id === id)?.nombre || '';
@@ -232,12 +266,23 @@ function cuentaDesdeTexto(txt, soloMovimiento = true) {
   return c;
 }
 async function cargarCatalogos() {
-  const [cu, ce, pe] = await Promise.all([
+  const inv = puede('inventario.ver') || puede('contabilidad.ver');
+  const nada = Promise.resolve([]);
+  const [cu, ce, pe, ro, bo, un, ca, pr, prod, pb] = await Promise.all([
     q(sb.from('cuentas').select('*')),
     q(sb.from('centros_costo').select('*').order('codigo')),
-    q(sb.from('perfiles').select('*').order('nombre'))
+    q(sb.from('perfiles').select('*').order('nombre')),
+    q(sb.from('roles').select('*').order('nombre')),
+    inv ? q(sb.from('bodegas').select('*').order('codigo')) : nada,
+    inv ? q(sb.from('unidades').select('*').order('codigo')) : nada,
+    inv ? q(sb.from('categorias_producto').select('*').order('nombre')) : nada,
+    inv ? q(sb.from('producto_presentaciones').select('*')) : nada,
+    inv ? q(sb.from('productos').select('*').order('codigo')) : nada,
+    q(sb.from('perfil_bodegas').select('*').eq('perfil_id', yo.id))
   ]);
-  cache.cuentas = cu.sort(ordenCodigo); cache.centros = ce; cache.perfiles = pe;
+  cache.cuentas = cu.sort(ordenCodigo); cache.centros = ce; cache.perfiles = pe; cache.roles = ro;
+  cache.bodegas = bo; cache.unidades = un; cache.categorias = ca; cache.presentaciones = pr; cache.productos = prod;
+  cache.misBodegas = puede('inventario.todas_bodegas') ? bo.map(b => b.id) : pb.map(x => x.bodega_id);
 }
 const opcionesCentro = (sel, todos = false) =>
   `<option value="">${todos ? 'Todos los centros' : '—'}</option>` +
@@ -345,6 +390,15 @@ async function entrar(user) {
     return;
   }
   yo = p;
+  permisos = await q(sb.rpc('mis_permisos'));
+  if (!permisos.length) {
+    $('#raiz').innerHTML = `<div class="acceso"><div class="caja"><img src="logo.png" alt="Amigos for Christ"><h1>Contabilidad</h1>
+      <div class="aviso" style="margin-top:14px">Hola, ${esc(p.nombre || p.correo)}. Su usuario aún no tiene un rol asignado. Pida al administrador del sistema que le asigne uno y vuelva a intentar.</div>
+      <div class="acciones" style="justify-content:center"><button class="btn" id="b-reintentar">Volver a intentar</button><button class="btn sec" id="b-salir2">Salir</button></div></div></div>`;
+    $('#b-reintentar').onclick = () => entrar(user);
+    $('#b-salir2').onclick = () => sb.auth.signOut();
+    return;
+  }
   await cargarCatalogos();
   armarEstructura();
   mostrar();
@@ -355,18 +409,25 @@ async function entrar(user) {
 // ============================================================
 const MENU = [
   ['', 'Inicio'],
-  ['g', 'Registro'], ['asientos', 'Asientos'], ['catalogo', 'Catálogo de cuentas'], ['centros', 'Centros de costo'], ['tipos-cambio', 'Tipos de cambio'],
-  ['g', 'Reportes'], ['mayor', 'Libro mayor'], ['balanza', 'Balanza de comprobación'], ['estados', 'Estados financieros'],
-  ['g', 'Administración'], ['periodos', 'Períodos y cierre'], ['usuarios', 'Usuarios', 'admin'], ['bitacora', 'Bitácora', 'admin']
+  ['g', 'Contabilidad'], ['asientos', 'Asientos', 'contabilidad.ver'], ['catalogo', 'Catálogo de cuentas', 'contabilidad.ver'],
+  ['centros', 'Centros de costo', 'contabilidad.ver'], ['tipos-cambio', 'Tipos de cambio', 'contabilidad.ver'],
+  ['g', 'Reportes'], ['mayor', 'Libro mayor', 'contabilidad.ver'], ['balanza', 'Balanza de comprobación', 'contabilidad.ver'], ['estados', 'Estados financieros', 'contabilidad.ver'],
+  ['g', 'Inventario'], ['existencias', 'Existencias', 'inventario.ver'], ['movimientos', 'Movimientos', 'inventario.ver'], ['kardex', 'Kardex', 'inventario.ver'],
+  ['productos', 'Productos', 'inventario.ver'], ['bodegas', 'Bodegas', 'inventario.ver'],
+  ['g', 'Administración'], ['periodos', 'Períodos y cierre', 'contabilidad.ver'], ['usuarios', 'Usuarios', 'admin.usuarios'], ['roles', 'Roles y permisos', 'admin.usuarios'], ['bitacora', 'Bitácora', 'admin.usuarios']
 ];
+function menuVisible() {
+  const items = MENU.filter(m => m[0] === 'g' || !m[2] || puede(m[2]));
+  return items.filter((m, i) => m[0] !== 'g' || (items[i + 1] && items[i + 1][0] !== 'g'));
+}
 function armarEstructura() {
   $('#raiz').innerHTML = `
   <div class="barra-movil"><button id="b-menu">☰ Menú</button><img src="logo-blanco.png" alt="Amigos for Christ"></div>
   <div class="app">
     <aside class="lateral" id="lateral">
-      <div><img src="logo-blanco.png" alt="Amigos for Christ"><div class="sub">Contabilidad</div></div>
-      <nav class="nav">${MENU.filter(m => !m[2] || admin()).map(([r, t]) => r === 'g' ? `<div class="grupo">${t}</div>` : `<a href="#${r}" data-ruta="${r}">${t}</a>`).join('')}</nav>
-      <div class="usuario"><b>${esc(yo.nombre || yo.correo)}</b><span>${ROLES[yo.rol]}</span><br><button id="b-salir">Salir</button></div>
+      <div><img src="logo-blanco.png" alt="Amigos for Christ"><div class="sub">Contabilidad e inventario</div></div>
+      <nav class="nav">${menuVisible().map(([r, t]) => r === 'g' ? `<div class="grupo">${t}</div>` : `<a href="#${r}" data-ruta="${r}">${t}</a>`).join('')}</nav>
+      <div class="usuario"><b>${esc(yo.nombre || yo.correo)}</b><span>${esc(nombreRol(yo.rol_id))}</span><br><button id="b-salir">Salir</button></div>
     </aside>
     <main id="principal"></main>
   </div>`;
@@ -376,13 +437,16 @@ function armarEstructura() {
 }
 const RUTAS = {
   '': vInicio, asientos: vAsientos, asiento: vAsiento, catalogo: vCatalogo, centros: vCentros, 'tipos-cambio': vTiposCambio,
-  mayor: vMayor, balanza: vBalanza, estados: vEstados, periodos: vPeriodos, usuarios: vUsuarios, bitacora: vBitacora
+  mayor: vMayor, balanza: vBalanza, estados: vEstados, periodos: vPeriodos, usuarios: vUsuarios, bitacora: vBitacora,
+  roles: vRoles, existencias: vExistencias, movimientos: vMovimientos, movimiento: vMovimiento, kardex: vKardex,
+  productos: vProductos, bodegas: vBodegas
 };
+const PADRE_RUTA = { asiento: 'asientos', movimiento: 'movimientos' };
 async function mostrar() {
   if (!yo) return;
   const [ruta, arg] = location.hash.replace(/^#/, '').split('/');
   const vista = RUTAS[ruta] || vInicio;
-  $$('#lateral a').forEach(a => a.classList.toggle('activo', a.dataset.ruta === (RUTAS[ruta] ? ruta : '') || (ruta === 'asiento' && a.dataset.ruta === 'asientos')));
+  $$('#lateral a').forEach(a => a.classList.toggle('activo', a.dataset.ruta === (RUTAS[ruta] ? ruta : '') || PADRE_RUTA[ruta] === a.dataset.ruta));
   const m = $('#principal');
   m.innerHTML = '<div class="cargando">Cargando…</div>';
   try { await vista(m, arg); } catch (e) { m.innerHTML = `<div class="aviso error">${esc(mensajeError(e))}</div>`; console.error(e); }
@@ -395,6 +459,11 @@ window.addEventListener('hashchange', mostrar);
 // ============================================================
 async function vInicio(m) {
   const [d, h] = rangoMes();
+  const [y, mes] = d.split('-').map(Number);
+  const saludo = `<div class="cabecera"><div><h1>Hola, ${esc((yo.nombre || '').split(' ')[0])}</h1><p>${MESES[mes - 1]} ${y} · ${ORGANIZACION}</p></div>
+      <div class="acciones">${editor() ? '<a class="btn" href="#asiento/nuevo">+ Nuevo asiento</a>' : ''}${puede('inventario.editar') ? '<a class="btn sec" href="#movimiento/nuevo-salida">+ Salida de bodega</a>' : ''}</div></div>`;
+  const invHtml = puede('inventario.ver') ? await resumenInventario() : '';
+  if (!puede('contabilidad.ver')) { m.innerHTML = saludo + invHtml; return; }
   const [bal, borr, cont, tc] = await Promise.all([
     q(sb.rpc('balanza', { p_desde: d, p_hasta: h })),
     q(sb.from('asientos').select('id,fecha,concepto').eq('estado', 'borrador').order('fecha', { ascending: false }).limit(6)),
@@ -403,10 +472,7 @@ async function vInicio(m) {
   ]);
   const mov = tipo => bal.filter(x => x.nivel === 1 && x.tipo === tipo).reduce((s, x) => s + Number(x.saldo_final) - Number(x.saldo_inicial), 0);
   const ing = mov('ingreso'), egr = mov('costo') + mov('gasto');
-  const [y, mes] = d.split('-').map(Number);
-  m.innerHTML = `
-    <div class="cabecera"><div><h1>Hola, ${esc((yo.nombre || '').split(' ')[0])}</h1><p>${MESES[mes - 1]} ${y} · ${ORGANIZACION}</p></div>
-      ${editor() ? '<a class="btn" href="#asiento/nuevo">+ Nuevo asiento</a>' : ''}</div>
+  m.innerHTML = saludo + `
     ${tc ? '' : `<div class="aviso">No hay tipo de cambio registrado para hoy. ${editor() ? '<a href="#tipos-cambio">Registrarlo</a>' : ''}</div>`}
     <div class="kpis">
       <div class="kpi"><div class="et">Ingresos del mes (C$)</div><div class="val">${fmt(ing)}</div></div>
@@ -417,6 +483,7 @@ async function vInicio(m) {
     <div class="tarjeta"><h2>Borradores pendientes</h2>
       ${borr.length ? `<div class="envoltura"><table><tbody>${borr.map(a => `<tr class="clic" onclick="location.hash='asiento/${a.id}'"><td style="width:110px">${fecha(a.fecha)}</td><td>${esc(a.concepto)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No hay asientos en borrador.</p>'}
     </div>
+    ${invHtml}
     ${tc ? `<p class="muted">Tipo de cambio de hoy: C$ ${Number(tc.tasa).toFixed(4)} por US$ 1</p>` : ''}`;
 }
 
@@ -442,7 +509,7 @@ async function vAsientos(m) {
       <div class="envoltura" id="lista"><div class="cargando">Cargando…</div></div>
     </div>`;
   $('#f-filtro').onsubmit = e => { e.preventDefault(); Object.assign(filtroAsientos, Object.fromEntries(new FormData(e.target))); vAsientos(m); };
-  let consulta = sb.from('asientos').select('id,numero,fecha,tipo,concepto,referencia,moneda,estado,asiento_lineas(debe,debe_me)')
+  let consulta = sb.from('asientos').select('id,numero,fecha,tipo,concepto,referencia,moneda,estado,origen,asiento_lineas(debe,debe_me)')
     .gte('fecha', f.desde).lte('fecha', f.hasta)
     .order('fecha', { ascending: false }).order('numero', { ascending: false, nullsFirst: true }).limit(1000);
   if (f.estado) consulta = consulta.eq('estado', f.estado);
@@ -454,7 +521,7 @@ async function vAsientos(m) {
     <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Referencia</th><th class="num">Total C$</th><th>Estado</th></tr></thead>
     <tbody>${filas.map(a => `<tr class="clic" onclick="location.hash='asiento/${a.id}'">
       <td>${a.numero ?? '<span class="muted">—</span>'}</td><td>${fecha(a.fecha)}</td><td>${TIPOS_ASIENTO[a.tipo]}</td>
-      <td>${esc(a.concepto)}${a.moneda === 'USD' ? ' <span class="muted">(US$)</span>' : ''}</td><td>${esc(a.referencia)}</td>
+      <td>${esc(a.concepto)}${a.moneda === 'USD' ? ' <span class="muted">(US$)</span>' : ''}${a.origen === 'inventario' ? ' <span class="muted">(inventario)</span>' : ''}</td><td>${esc(a.referencia)}</td>
       <td class="num">${fmt(total(a))}</td><td><span class="etiqueta e-${a.estado}">${a.estado}</span></td></tr>`).join('')}</tbody></table>`
     : '<div class="vacio">No hay asientos con estos filtros.</div>';
   $('#b-csv').onclick = () => csv(`asientos_${f.desde}_${f.hasta}.csv`,
@@ -468,6 +535,7 @@ async function vAsientos(m) {
 let plantillaAsiento = null;
 async function vAsiento(m, arg) {
   let A;
+  if (!puede('contabilidad.ver')) { m.innerHTML = '<div class="aviso error">No tiene acceso a la contabilidad.</div>'; return; }
   if (arg === 'nuevo' || !arg) {
     A = plantillaAsiento || { fecha: hoy(), tipo: 'diario', moneda: 'NIO', concepto: '', referencia: '', tipo_cambio: '', estado: 'nuevo',
       lineas: [] };
@@ -493,13 +561,14 @@ function verAsiento(m, A) {
   m.innerHTML = `
     <div class="cabecera no-imprimir"><div><h1>Asiento ${A.numero ? 'Nº ' + A.numero : ''}</h1><p><a href="#asientos">← Volver a asientos</a></p></div>
       <div class="acciones">
-        ${editor() ? '<button class="btn sec" id="b-dup">Duplicar</button>' : ''}
+        ${editor() && A.origen !== 'inventario' ? '<button class="btn sec" id="b-dup">Duplicar</button>' : ''}
         <button class="btn sec" onclick="print()">Imprimir</button>
-        ${editor() && A.estado === 'contabilizado' ? '<button class="btn peligro" id="b-anular">Anular</button>' : ''}
+        ${editor() && A.estado === 'contabilizado' && A.origen !== 'inventario' ? '<button class="btn peligro" id="b-anular">Anular</button>' : ''}
       </div></div>
     <div class="tarjeta">
       <div class="reporte-titulo"><img src="logo.png" alt="Amigos for Christ"><h2>Comprobante de ${TIPOS_ASIENTO[A.tipo].toLowerCase()} ${A.numero ? 'Nº ' + A.anio + '-' + String(A.numero).padStart(4, '0') : ''}</h2>
         <div class="muted">${fecha(A.fecha)} · <span class="etiqueta e-${A.estado}">${A.estado}</span></div></div>
+      ${A.origen === 'inventario' ? `<div class="aviso no-imprimir" id="origen-inv">Asiento generado automáticamente por el inventario.</div>` : ''}
       ${A.estado === 'anulado' ? `<div class="aviso error">Anulado por ${esc(nombrePerfil(A.anulado_por))} el ${fechaHora(A.anulado_en)}. Motivo: ${esc(A.motivo_anulacion)}</div>` : ''}
       <p><b>Concepto:</b> ${esc(A.concepto)}${A.referencia ? ` &nbsp; <b>Referencia:</b> ${esc(A.referencia)}` : ''}
         ${usd ? ` &nbsp; <b>Moneda:</b> US$ a C$ ${Number(A.tipo_cambio).toFixed(4)}` : ''}</p>
@@ -515,6 +584,13 @@ function verAsiento(m, A) {
         ${A.contabilizado_en ? `<span>Contabilizado: ${esc(nombrePerfil(A.contabilizado_por))} · ${fechaHora(A.contabilizado_en)}</span>` : ''}
       </div>
     </div>`;
+  if (A.origen === 'inventario' && puede('inventario.ver')) {
+    Promise.all([q(sb.from('inv_movimientos').select('id,tipo,anio,numero').eq('asiento_id', A.id)),
+                 q(sb.from('inv_movimientos').select('id,tipo,anio,numero').eq('asiento_anulacion_id', A.id))]).then(([a, b]) => {
+      const mv = a[0] || b[0];
+      if (mv && $('#origen-inv')) $('#origen-inv').innerHTML = `Asiento generado automáticamente por ${b[0] ? 'la anulación de' : ''} el movimiento <a href="#movimiento/${mv.id}">${docMov(mv)}</a>.`;
+    }).catch(() => {});
+  }
   if ($('#b-dup')) $('#b-dup').onclick = () => {
     plantillaAsiento = { fecha: hoy(), tipo: A.tipo, moneda: A.moneda, concepto: A.concepto, referencia: '', tipo_cambio: '', estado: 'nuevo',
       lineas: A.lineas.map(l => ({ cuenta_id: l.cuenta_id, centro_costo_id: l.centro_costo_id, descripcion: l.descripcion, debe: Number(l.debe) || '', haber: Number(l.haber) || '' })) };
@@ -972,7 +1048,7 @@ async function vPeriodos(m) {
       <thead><tr><th>Período</th><th>Estado</th><th>Cerrado por</th><th></th></tr></thead>
       <tbody>${per.map(x => `<tr><td>${MESES[x.mes - 1]} ${x.anio}</td><td><span class="etiqueta e-${x.estado}">${x.estado}</span></td>
         <td class="muted">${x.cerrado_en ? esc(nombrePerfil(x.cerrado_por)) + ' · ' + fechaHora(x.cerrado_en) : ''}</td>
-        <td class="num">${admin() ? `<button class="btn ${x.estado === 'abierto' ? 'navy' : 'sec'} chico" data-anio="${x.anio}" data-mes="${x.mes}" data-acc="${x.estado === 'abierto' ? 'cerrar' : 'abrir'}">${x.estado === 'abierto' ? 'Cerrar' : 'Reabrir'}</button>` : ''}</td></tr>`).join('')
+        <td class="num">${puede('contabilidad.periodos') ? `<button class="btn ${x.estado === 'abierto' ? 'navy' : 'sec'} chico" data-anio="${x.anio}" data-mes="${x.mes}" data-acc="${x.estado === 'abierto' ? 'cerrar' : 'abrir'}">${x.estado === 'abierto' ? 'Cerrar' : 'Reabrir'}</button>` : ''}</td></tr>`).join('')
         || '<tr><td colspan="4" class="vacio">Los períodos se crean solos al registrar el primer asiento de cada mes.</td></tr>'}</tbody>
     </table></div></div>
     ${editor() ? `<div class="tarjeta"><h2>Cierre del ejercicio</h2>
@@ -998,27 +1074,78 @@ async function vPeriodos(m) {
 // Usuarios y bitácora (solo administrador)
 // ============================================================
 async function vUsuarios(m) {
-  if (!admin()) { m.innerHTML = '<div class="aviso error">Solo el administrador ve esta sección.</div>'; return; }
+  if (!admin()) { m.innerHTML = '<div class="aviso error">Solo un administrador ve esta sección.</div>'; return; }
   await cargarCatalogos();
+  const pb = await q(sb.from('perfil_bodegas').select('*'));
+  const bodegasDe = id => pb.filter(x => x.perfil_id === id).map(x => x.bodega_id);
+  const rolTodas = id => { const r = cache.roles.find(x => x.id === id); return r && (r.permisos.includes('*') || r.permisos.includes('inventario.todas_bodegas')); };
+  const sinRol = cache.perfiles.filter(u => !u.rol_id).length;
   m.innerHTML = `
-    <div class="cabecera"><div><h1>Usuarios</h1><p>Quien se registra entra como Consulta; aquí se le asigna su rol.</p></div></div>
+    <div class="cabecera"><div><h1>Usuarios</h1><p>Quien se registra entra sin acceso hasta que usted le asigne un rol.</p></div>
+      <a class="btn sec" href="#roles">Roles y permisos</a></div>
+    ${sinRol ? `<div class="aviso">${sinRol} usuario(s) esperan que les asigne un rol.</div>` : ''}
     <div class="tarjeta"><div class="envoltura"><table>
-      <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Desde</th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Bodegas</th><th>Desde</th></tr></thead>
       <tbody>${cache.perfiles.map(u => `<tr><td>${esc(u.nombre)}</td><td>${esc(u.correo)}</td>
-        <td><select data-id="${u.id}">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${u.rol === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td><select data-id="${u.id}"><option value="">Sin rol (sin acceso)</option>${cache.roles.map(r => `<option value="${r.id}" ${u.rol_id === r.id ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('')}</select></td>
+        <td>${rolTodas(u.rol_id) ? '<span class="muted">Todas</span>' : `<button class="btn sec chico" data-bod="${u.id}">${bodegasDe(u.id).length ? bodegasDe(u.id).map(b => esc(bodegaPorId(b)?.codigo || '')).join(', ') : 'Asignar'}</button>`}</td>
         <td class="muted">${fecha(u.creado_en)}</td></tr>`).join('')}</tbody>
     </table></div>
-    <p class="muted" style="font-size:13px"><b>Administrador:</b> todo, incluye cerrar períodos y asignar roles. <b>Contador:</b> catálogo, tipos de cambio y asientos. <b>Consulta:</b> solo lectura.</p></div>`;
+    <p class="muted" style="font-size:13px">Los roles sin el permiso "todas las bodegas" (por ejemplo, Bodeguero) solo trabajan en las bodegas que se les asignen aquí.</p></div>`;
   $$('select[data-id]').forEach(s => s.onchange = async () => {
-    try { await q(sb.rpc('cambiar_rol', { p_usuario: s.dataset.id, p_rol: s.value })); avisar('Rol actualizado'); } catch (e) { fallo(e); vUsuarios(m); }
+    try { await q(sb.rpc('cambiar_rol', { p_usuario: s.dataset.id, p_rol: s.value ? Number(s.value) : null })); avisar('Rol actualizado'); vUsuarios(m); } catch (e) { fallo(e); vUsuarios(m); }
   });
+  $$('[data-bod]').forEach(b => b.onclick = () => {
+    const u = cache.perfiles.find(x => x.id === b.dataset.bod), act = bodegasDe(u.id);
+    abrirModal(`<h2>Bodegas de ${esc(u.nombre)}</h2><p class="muted">Marque las bodegas donde puede ver y registrar movimientos.</p>
+      ${cache.bodegas.map(x => `<label class="campo chk"><input type="checkbox" value="${x.id}" ${act.includes(x.id) ? 'checked' : ''}> ${esc(x.codigo)} · ${esc(x.nombre)}${x.activa ? '' : ' (inactiva)'}</label>`).join('')}`,
+      async d => { await q(sb.rpc('asignar_bodegas', { p_usuario: u.id, p_bodegas: $$('input[type=checkbox]:checked', d).map(c => Number(c.value)) })); avisar('Bodegas asignadas'); vUsuarios(m); });
+  });
+}
+
+async function vRoles(m) {
+  if (!admin()) { m.innerHTML = '<div class="aviso error">Solo un administrador ve esta sección.</div>'; return; }
+  await cargarCatalogos();
+  const usuarios = id => cache.perfiles.filter(u => u.rol_id === id).length;
+  const etiquetas = r => r.permisos.includes('*') ? '<span class="etiqueta e-contabilizado">Todo</span>' :
+    PERMISOS.filter(p => r.permisos.includes(p[0])).map(p => `<span class="etiqueta e-anulado" title="${esc(p[2])}">${esc(p[3])}</span>`).join(' ') || '<span class="muted">Ninguno</span>';
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Roles y permisos</h1><p>Cada usuario tiene un rol; el rol define qué puede ver y hacer.</p></div>
+      <button class="btn" id="b-nuevo">+ Nuevo rol</button></div>
+    <div class="tarjeta"><div class="envoltura"><table>
+      <thead><tr><th>Rol</th><th>Descripción</th><th>Permisos</th><th class="num">Usuarios</th></tr></thead>
+      <tbody>${cache.roles.map(r => `<tr class="clic" data-id="${r.id}"><td><b>${esc(r.nombre)}</b>${r.sistema ? ' <span class="muted">(sistema)</span>' : ''}</td>
+        <td class="muted">${esc(r.descripcion)}</td><td style="line-height:2">${etiquetas(r)}</td><td class="num">${usuarios(r.id)}</td></tr>`).join('')}</tbody>
+    </table></div></div>`;
+  const modal = (r = null) => {
+    const sis = r?.sistema;
+    const grupos = [...new Set(PERMISOS.map(p => p[1]))];
+    const d = abrirModal(`<h2>${r ? (sis ? 'Rol del sistema' : 'Editar rol') : 'Nuevo rol'}</h2>
+      ${sis ? '<div class="aviso">El rol Administrador tiene todos los permisos y no se puede modificar.</div>' : ''}
+      <div class="rejilla"><label class="campo">Nombre<input name="nombre" value="${esc(r?.nombre || '')}" required ${sis ? 'disabled' : ''}></label>
+      <label class="campo ancho">Descripción<input name="descripcion" value="${esc(r?.descripcion || '')}" ${sis ? 'disabled' : ''}></label></div>
+      ${grupos.map(g => `<h3 style="margin-top:14px">${g}</h3>${PERMISOS.filter(p => p[1] === g).map(p => `<label class="campo chk"><input type="checkbox" value="${p[0]}" ${r && (r.permisos.includes('*') || r.permisos.includes(p[0])) ? 'checked' : ''} ${sis ? 'disabled' : ''}> ${esc(p[2])}</label>`).join('')}`).join('')}`,
+      async d => {
+        if (sis) return;
+        const v = { nombre: $('[name=nombre]', d).value.trim(), descripcion: $('[name=descripcion]', d).value.trim() || null,
+          permisos: $$('input[type=checkbox]:checked', d).map(c => c.value) };
+        if (r) await q(sb.from('roles').update(v).eq('id', r.id)); else await q(sb.from('roles').insert(v));
+        avisar('Rol guardado'); vRoles(m);
+      }, { extraIzq: r && !sis ? '<button type="button" class="btn peligro" id="b-borrar">Eliminar</button>' : '' });
+    if (r && !sis) $('#b-borrar', d).onclick = async () => {
+      if (!confirm(`¿Eliminar el rol ${r.nombre}?`)) return;
+      try { await q(sb.from('roles').delete().eq('id', r.id)); d.close(); avisar('Rol eliminado'); vRoles(m); } catch (e) { fallo(e); }
+    };
+  };
+  $('#b-nuevo').onclick = () => modal();
+  $('tbody').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) modal(cache.roles.find(r => r.id === Number(tr.dataset.id))); };
 }
 
 async function vBitacora(m) {
   if (!admin()) { m.innerHTML = '<div class="aviso error">Solo el administrador ve esta sección.</div>'; return; }
   const filas = await q(sb.from('bitacora').select('*').order('fecha', { ascending: false }).limit(300));
   const OPS = { INSERT: 'Creó', UPDATE: 'Modificó', DELETE: 'Eliminó' };
-  const TABLAS = { cuentas: 'Cuenta', centros_costo: 'Centro de costo', tipos_cambio: 'Tipo de cambio', periodos: 'Período', asientos: 'Asiento', perfiles: 'Usuario' };
+  const TABLAS = { cuentas: 'Cuenta', centros_costo: 'Centro de costo', tipos_cambio: 'Tipo de cambio', periodos: 'Período', asientos: 'Asiento', perfiles: 'Usuario', roles: 'Rol', bodegas: 'Bodega', productos: 'Producto', inv_parametros: 'Cuentas de inventario', inv_movimientos: 'Movimiento de inventario' };
   const cambios = (a, d) => {
     if (!a || !d) return JSON.stringify(a || d, null, 1);
     return Object.keys(d).filter(k => JSON.stringify(a[k]) !== JSON.stringify(d[k])).map(k => `${k}: ${JSON.stringify(a[k])} → ${JSON.stringify(d[k])}`).join('\n');
@@ -1031,6 +1158,533 @@ async function vBitacora(m) {
         <td>${OPS[b.operacion] || b.operacion} ${TABLAS[b.tabla] || b.tabla}</td><td>${esc(b.registro)}</td>
         <td><details><summary>Ver</summary><pre>${esc(cambios(b.datos_antes, b.datos_despues))}</pre></details></td></tr>`).join('') || '<tr><td colspan="5" class="vacio">Sin registros</td></tr>'}</tbody>
     </table></div></div>`;
+}
+
+// ============================================================
+// Inventario: utilidades
+// ============================================================
+const bodegasAccesibles = (soloActivas = true) => cache.bodegas.filter(b => cache.misBodegas.includes(b.id) && (!soloActivas || b.activa));
+const opcionesBodega = (lista, sel, todas = '') => (todas ? `<option value="">${todas}</option>` : '') +
+  lista.map(b => `<option value="${b.id}" ${b.id === Number(sel) ? 'selected' : ''}>${esc(b.codigo)} · ${esc(b.nombre)}</option>`).join('');
+const unidadesDe = p => p ? [{ unidad_id: p.unidad_id, factor: 1 }, ...cache.presentaciones.filter(x => x.producto_id === p.id).map(x => ({ unidad_id: x.unidad_id, factor: Number(x.factor) }))] : [];
+const codUnidad = id => unidadPorId(id)?.codigo || '';
+function productoDesdeTexto(txt) {
+  const cod = String(txt || '').split(' — ')[0].trim();
+  return cache.productos.find(p => p.codigo === cod && p.activo) || null;
+}
+const datalistProductos = (id, soloActivos = true) => `<datalist id="${id}">` + cache.productos.filter(p => !soloActivos || p.activo).map(p => `<option value="${esc(etiquetaProducto(p))}"></option>`).join('') + '</datalist>';
+
+async function resumenInventario() {
+  const [ex, borr] = await Promise.all([
+    q(sb.from('existencias').select('*')),
+    puede('inventario.editar') ? q(sb.from('inv_movimientos').select('id,tipo,fecha,concepto,bodega_id').eq('estado', 'borrador').order('fecha', { ascending: false }).limit(6)) : Promise.resolve([])
+  ]);
+  const tot = {}; ex.forEach(e => tot[e.producto_id] = (tot[e.producto_id] || 0) + Number(e.cantidad));
+  const valor = cache.productos.reduce((s, p) => s + (tot[p.id] || 0) * Number(p.costo_promedio), 0);
+  const bajos = cache.productos.filter(p => p.activo && Number(p.stock_minimo) > 0 && (tot[p.id] || 0) < Number(p.stock_minimo));
+  return `<h2 style="margin:22px 0 12px">Inventario${puede('inventario.todas_bodegas') ? '' : ' de mis bodegas'}</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="et">Valor del inventario (C$)</div><div class="val">${fmt(valor)}</div></div>
+      <div class="kpi"><div class="et">Productos con existencia</div><div class="val navy">${Object.values(tot).filter(v => v > 0).length}</div></div>
+      <div class="kpi"><div class="et">Bajo el mínimo</div><div class="val ${bajos.length ? '' : 'navy'}">${bajos.length}</div></div>
+      <div class="kpi"><div class="et">Bodegas</div><div class="val navy">${bodegasAccesibles().length}</div></div>
+    </div>
+    ${bajos.length ? `<div class="tarjeta"><h2>Productos bajo el mínimo</h2><div class="envoltura"><table><thead><tr><th>Producto</th><th class="num">Existencia</th><th class="num">Mínimo</th></tr></thead><tbody>
+      ${bajos.slice(0, 8).map(p => `<tr class="clic" onclick="location.hash='kardex/${p.id}'"><td>${esc(etiquetaProducto(p))}</td><td class="num">${fmtQ(tot[p.id] || 0)} ${esc(codUnidad(p.unidad_id))}</td><td class="num">${fmtQ(p.stock_minimo)}</td></tr>`).join('')}
+      </tbody></table></div></div>` : ''}
+    ${borr.length ? `<div class="tarjeta"><h2>Movimientos de inventario en borrador</h2><div class="envoltura"><table><tbody>
+      ${borr.map(b => `<tr class="clic" onclick="location.hash='movimiento/${b.id}'"><td style="width:110px">${fecha(b.fecha)}</td><td style="width:90px">${TIPOS_MOV[b.tipo]}</td><td>${esc(b.concepto)}</td><td class="muted">${esc(bodegaPorId(b.bodega_id)?.nombre)}</td></tr>`).join('')}
+      </tbody></table></div></div>` : ''}`;
+}
+
+// ============================================================
+// Existencias por bodega
+// ============================================================
+let filtroExist = { texto: '', categoria: '', bajos: false, ceros: true };
+async function vExistencias(m) {
+  await cargarCatalogos();
+  const ex = await q(sb.from('existencias').select('*'));
+  const bods = bodegasAccesibles(false).filter(b => b.activa || ex.some(e => e.bodega_id === b.id && Number(e.cantidad)));
+  const cant = {}; ex.forEach(e => cant[e.producto_id + ':' + e.bodega_id] = Number(e.cantidad));
+  const f = filtroExist;
+  const t = f.texto.toLowerCase();
+  const filas = cache.productos.map(p => {
+    const porB = bods.map(b => cant[p.id + ':' + b.id] || 0), total = porB.reduce((s, x) => s + x, 0);
+    return { p, porB, total, valor: r2(total * Number(p.costo_promedio)), bajo: Number(p.stock_minimo) > 0 && total < Number(p.stock_minimo) };
+  }).filter(r => (r.p.activo || r.total) && (!t || (r.p.codigo + ' ' + r.p.nombre).toLowerCase().includes(t))
+    && (!f.categoria || r.p.categoria_id === Number(f.categoria)) && (!f.bajos || r.bajo) && (!f.ceros || r.total || r.bajo));
+  const totB = bods.map((_, i) => filas.reduce((s, r) => s + r.porB[i] * Number(r.p.costo_promedio), 0));
+  const totV = filas.reduce((s, r) => s + r.valor, 0);
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Existencias</h1><p>${puede('inventario.todas_bodegas') ? 'Todas las bodegas' : 'Sus bodegas asignadas'} · cantidades en la unidad base de cada producto</p></div>
+      <div class="acciones no-imprimir">${puede('inventario.editar') ? `<a class="btn" href="#movimiento/nuevo-entrada">+ Entrada</a><a class="btn sec" href="#movimiento/nuevo-salida">+ Salida</a><a class="btn sec" href="#movimiento/nuevo-traslado">+ Traslado</a>` : ''}
+        <button class="btn sec" id="b-csv">Exportar CSV</button><button class="btn sec" onclick="print()">Imprimir</button></div></div>
+    <div class="kpis">${bods.map((b, i) => `<div class="kpi"><div class="et">${esc(b.nombre)} (C$)</div><div class="val navy">${fmt(totB[i])}</div></div>`).join('')}
+      <div class="kpi"><div class="et">Total (C$)</div><div class="val">${fmt(totV)}</div></div></div>
+    <div class="tarjeta">
+      <form class="filtros" id="f-ex">
+        <label class="campo" style="flex:1;min-width:180px">Buscar<input name="texto" value="${esc(f.texto)}" placeholder="Código o nombre"></label>
+        <label class="campo">Categoría<select name="categoria"><option value="">Todas</option>${cache.categorias.map(c => `<option value="${c.id}" ${Number(f.categoria) === c.id ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></label>
+        <label class="campo chk"><input type="checkbox" name="bajos" ${f.bajos ? 'checked' : ''}> Solo bajo el mínimo</label>
+        <label class="campo chk"><input type="checkbox" name="ceros" ${f.ceros ? 'checked' : ''}> Ocultar sin existencia</label>
+        <button class="btn sec">Filtrar</button>
+      </form>
+      <div class="reporte-titulo" style="display:none" id="tit-imp"><img src="logo.png" alt="Amigos for Christ"><h2>Existencias al ${fecha(hoy())}</h2></div>
+      <div class="envoltura"><table>
+        <thead><tr><th>Código</th><th>Producto</th><th>Unidad</th>${bods.map(b => `<th class="num" title="${esc(b.nombre)}">${esc(b.codigo)}</th>`).join('')}<th class="num">Total</th><th class="num">Costo prom.</th><th class="num">Valor C$</th><th></th></tr></thead>
+        <tbody>${filas.map(r => `<tr class="clic" onclick="location.hash='kardex/${r.p.id}'"><td>${esc(r.p.codigo)}</td><td>${esc(r.p.nombre)}</td><td>${esc(codUnidad(r.p.unidad_id))}</td>
+          ${r.porB.map(x => `<td class="num">${x ? fmtQ(x) : '<span class="muted">–</span>'}</td>`).join('')}
+          <td class="num"><b>${fmtQ(r.total)}</b></td><td class="num">${fmt(r.p.costo_promedio)}</td><td class="num">${fmt(r.valor)}</td>
+          <td>${r.bajo ? '<span class="etiqueta e-borrador">Bajo mínimo</span>' : ''}</td></tr>`).join('') || `<tr><td colspan="${bods.length + 7}" class="vacio">No hay productos con estos filtros.${puede('inventario.catalogo') && !cache.productos.length ? ' <a href="#productos">Cree el primer producto</a>.' : ''}</td></tr>`}
+          ${filas.length ? `<tr class="total"><td colspan="${bods.length + 5}">Valor total</td><td></td><td class="num">${fmt(totV)}</td><td></td></tr>` : ''}</tbody>
+      </table></div>
+    </div>`;
+  $('#f-ex').onsubmit = e => { e.preventDefault(); const d = new FormData(e.target); filtroExist = { texto: d.get('texto'), categoria: d.get('categoria'), bajos: d.get('bajos') === 'on', ceros: d.get('ceros') === 'on' }; vExistencias(m); };
+  $('#b-csv').onclick = () => csv(`existencias_${hoy()}.csv`, [['Codigo', 'Producto', 'Unidad', ...bods.map(b => b.nombre), 'Total', 'Costo promedio', 'Valor C$'],
+    ...filas.map(r => [r.p.codigo, r.p.nombre, codUnidad(r.p.unidad_id), ...r.porB, r.total, r.p.costo_promedio, r.valor.toFixed(2)])]);
+}
+
+// ============================================================
+// Movimientos de inventario
+// ============================================================
+let filtroMov = null;
+async function vMovimientos(m) {
+  if (!filtroMov) { const [d, h] = rangoMes(); filtroMov = { desde: d, hasta: h, tipo: '', bodega: '', estado: '' }; }
+  const f = filtroMov;
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Movimientos de inventario</h1><p>Entradas, salidas, traslados y ajustes</p></div>
+      <div class="acciones">${puede('inventario.editar') ? Object.entries(TIPOS_MOV).map(([k, v], i) => `<a class="btn ${i ? 'sec' : ''}" href="#movimiento/nuevo-${k}">+ ${v}</a>`).join('') : ''}<button class="btn sec" id="b-csv">Exportar CSV</button></div></div>
+    <div class="tarjeta">
+      <form class="filtros" id="f-mov">
+        <label class="campo">Desde<input type="date" name="desde" value="${f.desde}"></label>
+        <label class="campo">Hasta<input type="date" name="hasta" value="${f.hasta}"></label>
+        <label class="campo">Tipo<select name="tipo"><option value="">Todos</option>${Object.entries(TIPOS_MOV).map(([k, v]) => `<option value="${k}" ${f.tipo === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label class="campo">Bodega<select name="bodega">${opcionesBodega(bodegasAccesibles(false), f.bodega, 'Todas')}</select></label>
+        <label class="campo">Estado<select name="estado"><option value="">Todos</option>${['borrador', 'aplicado', 'anulado'].map(e => `<option value="${e}" ${f.estado === e ? 'selected' : ''}>${e[0].toUpperCase() + e.slice(1)}</option>`).join('')}</select></label>
+        <button class="btn sec">Filtrar</button>
+      </form>
+      <div class="envoltura" id="lista"><div class="cargando">Cargando…</div></div>
+    </div>`;
+  $('#f-mov').onsubmit = e => { e.preventDefault(); Object.assign(filtroMov, Object.fromEntries(new FormData(e.target))); vMovimientos(m); };
+  let c = sb.from('inv_movimientos').select('*,inv_movimiento_lineas(costo_total)').gte('fecha', f.desde).lte('fecha', f.hasta)
+    .order('fecha', { ascending: false }).order('id', { ascending: false }).limit(1000);
+  if (f.tipo) c = c.eq('tipo', f.tipo);
+  if (f.estado) c = c.eq('estado', f.estado);
+  let filas = await q(c);
+  if (f.bodega) filas = filas.filter(x => x.bodega_id === Number(f.bodega) || x.bodega_destino_id === Number(f.bodega));
+  const total = x => x.inv_movimiento_lineas.reduce((s, l) => s + Math.abs(Number(l.costo_total || 0)), 0);
+  const est = { borrador: 'e-borrador', aplicado: 'e-contabilizado', anulado: 'e-anulado' };
+  $('#lista').innerHTML = filas.length ? `<table>
+    <thead><tr><th>Documento</th><th>Fecha</th><th>Tipo</th><th>Bodega</th><th>Concepto</th><th class="num">Valor C$</th><th>Estado</th></tr></thead>
+    <tbody>${filas.map(x => `<tr class="clic" onclick="location.hash='movimiento/${x.id}'"><td>${docMov(x)}</td><td>${fecha(x.fecha)}</td><td>${TIPOS_MOV[x.tipo]}</td>
+      <td>${esc(bodegaPorId(x.bodega_id)?.codigo)}${x.bodega_destino_id ? ' → ' + esc(bodegaPorId(x.bodega_destino_id)?.codigo) : ''}</td>
+      <td>${esc(x.concepto)}${x.referencia ? ` <span class="muted">· ${esc(x.referencia)}</span>` : ''}</td>
+      <td class="num">${x.estado === 'borrador' && x.tipo !== 'entrada' ? '<span class="muted">al aplicar</span>' : fmt(total(x))}</td><td><span class="etiqueta ${est[x.estado]}">${x.estado}</span></td></tr>`).join('')}</tbody></table>`
+    : '<div class="vacio">No hay movimientos con estos filtros.</div>';
+  $('#b-csv').onclick = () => csv(`movimientos_${f.desde}_${f.hasta}.csv`, [['Documento', 'Fecha', 'Tipo', 'Bodega', 'Destino', 'Concepto', 'Referencia', 'Valor C$', 'Estado'],
+    ...filas.map(x => [docMov(x), x.fecha, TIPOS_MOV[x.tipo], bodegaPorId(x.bodega_id)?.nombre, bodegaPorId(x.bodega_destino_id)?.nombre || '', x.concepto, x.referencia || '', total(x).toFixed(2), x.estado])]);
+}
+
+async function vMovimiento(m, arg) {
+  await cargarCatalogos();
+  let M;
+  if (String(arg || '').startsWith('nuevo')) {
+    const tipo = (arg.split('-')[1] in TIPOS_MOV) ? arg.split('-')[1] : 'entrada';
+    if (!puede('inventario.editar')) { m.innerHTML = '<div class="aviso error">Su rol no permite registrar movimientos de inventario.</div>'; return; }
+    const bods = bodegasAccesibles();
+    if (!bods.length) { m.innerHTML = '<div class="aviso error">No tiene bodegas asignadas. Pida al administrador que le asigne una en Usuarios.</div>'; return; }
+    const par = await q(sb.from('inv_parametros').select('*').eq('id', 1).maybeSingle()) || {};
+    M = { estado: 'nuevo', tipo, fecha: hoy(), bodega_id: bods[0].id, bodega_destino_id: '', concepto: '', referencia: '', centro_costo_id: '',
+      cuenta_contrapartida_id: { entrada: par.cuenta_entrada_id, salida: par.cuenta_salida_id, ajuste: par.cuenta_ajuste_id }[tipo] || '', lineas: [{}, {}] };
+  } else {
+    const x = await q(sb.from('inv_movimientos').select('*').eq('id', Number(arg)).maybeSingle());
+    if (!x) { m.innerHTML = '<div class="aviso error">El movimiento no existe o no tiene acceso a su bodega.</div>'; return; }
+    const ls = await q(sb.from('inv_movimiento_lineas').select('*').eq('movimiento_id', x.id).order('orden'));
+    M = { ...x, lineas: ls.map(l => ({ ...l, costo: l.costo_total !== null && Number(l.cantidad) ? r2(Number(l.costo_total) / Math.abs(Number(l.cantidad)) * 1e4) / 1e4 : '' })) };
+  }
+  const editable = puede('inventario.editar') && (M.estado === 'nuevo' || M.estado === 'borrador');
+  return editable ? formMovimiento(m, M) : verMovimiento(m, M);
+}
+
+function verMovimiento(m, M) {
+  const tot = M.lineas.reduce((s, l) => s + Math.abs(Number(l.costo_total || 0)), 0);
+  const cta = cuentaPorId(M.cuenta_contrapartida_id), cc = cache.centros.find(c => c.id === M.centro_costo_id);
+  m.innerHTML = `
+    <div class="cabecera no-imprimir"><div><h1>${TIPOS_MOV[M.tipo]} ${docMov(M)}</h1><p><a href="#movimientos">← Volver a movimientos</a></p></div>
+      <div class="acciones"><button class="btn sec" onclick="print()">Imprimir</button>
+        ${puede('inventario.anular') && M.estado === 'aplicado' ? '<button class="btn peligro" id="b-anular">Anular</button>' : ''}</div></div>
+    <div class="tarjeta">
+      <div class="reporte-titulo"><img src="logo.png" alt="Amigos for Christ"><h2>${TIPOS_MOV[M.tipo]} de inventario ${docMov(M)}</h2>
+        <div class="muted">${fecha(M.fecha)} · <span class="etiqueta ${M.estado === 'anulado' ? 'e-anulado' : 'e-contabilizado'}">${M.estado}</span></div></div>
+      ${M.estado === 'anulado' ? `<div class="aviso error">Anulado el ${fecha(M.fecha_anulacion)} por ${esc(nombrePerfil(M.anulado_por))}. Motivo: ${esc(M.motivo_anulacion)}</div>` : ''}
+      <p><b>${M.tipo === 'traslado' ? 'De:' : 'Bodega:'}</b> ${esc(bodegaPorId(M.bodega_id)?.nombre)}${M.bodega_destino_id ? ` &nbsp; <b>A:</b> ${esc(bodegaPorId(M.bodega_destino_id)?.nombre)}` : ''}
+        &nbsp; <b>Concepto:</b> ${esc(M.concepto)}${M.referencia ? ` &nbsp; <b>Referencia:</b> ${esc(M.referencia)}` : ''}</p>
+      ${cta ? `<p class="muted" style="margin-top:-6px">Contrapartida: ${esc(etiquetaCuenta(cta))}${cc ? ' · Centro: ' + esc(cc.nombre) : ''}</p>` : ''}
+      <div class="envoltura"><table>
+        <thead><tr><th>Producto</th><th class="num">Cantidad</th><th>Unidad</th><th>Descripción</th><th class="num">Costo unit. C$</th><th class="num">Total C$</th></tr></thead>
+        <tbody>${M.lineas.map(l => { const p = productoPorId(l.producto_id);
+          return `<tr><td>${esc(etiquetaProducto(p))}</td><td class="num">${fmtQ(l.cantidad)}</td><td>${esc(codUnidad(l.unidad_id))}${Number(l.factor) !== 1 ? ` <span class="muted">(${fmtQ(l.cantidad_base)} ${esc(codUnidad(p?.unidad_id))})</span>` : ''}</td>
+          <td>${esc(l.descripcion)}</td><td class="num">${l.costo_total !== null ? fmt(Math.abs(l.costo_total / l.cantidad)) : ''}</td><td class="num">${l.costo_total !== null ? fmt(Math.abs(l.costo_total)) : ''}</td></tr>`; }).join('')}
+          <tr class="total"><td colspan="5">Total</td><td class="num">${fmt(tot)}</td></tr></tbody>
+      </table></div>
+      <div class="meta">
+        <span>Elaborado: ${esc(nombrePerfil(M.creado_por))} · ${fechaHora(M.creado_en)}</span>
+        ${M.aplicado_en ? `<span>Aplicado: ${esc(nombrePerfil(M.aplicado_por))} · ${fechaHora(M.aplicado_en)}</span>` : ''}
+        ${puede('contabilidad.ver') && M.asiento_id ? `<span class="no-imprimir"><a href="#asiento/${M.asiento_id}">Ver asiento contable</a></span>` : ''}
+        ${puede('contabilidad.ver') && M.asiento_anulacion_id ? `<span class="no-imprimir"><a href="#asiento/${M.asiento_anulacion_id}">Ver asiento de anulación</a></span>` : ''}
+        ${M.estado === 'aplicado' && !M.asiento_id ? '<span>Sin asiento contable (no hubo valor que registrar)</span>' : ''}
+      </div>
+      <div class="meta" style="margin-top:40px;justify-content:space-around"><span>______________________<br>Entregado por</span><span>______________________<br>Recibido por</span></div>
+    </div>`;
+  if ($('#b-anular')) $('#b-anular').onclick = () => abrirModal(
+    `<h2>Anular ${docMov(M)}</h2><p class="muted">Se revierten las existencias y se registra el asiento contable de reversión en la fecha indicada. No se puede deshacer.</p>
+     <div class="rejilla"><label class="campo">Fecha de la anulación<input type="date" name="fecha" value="${hoy() < M.fecha ? M.fecha : hoy()}" min="${M.fecha}" required></label>
+     <label class="campo ancho">Motivo<textarea name="motivo" rows="3" required></textarea></label></div>`,
+    async d => { await q(sb.rpc('anular_movimiento', { p_id: M.id, p_motivo: $('[name=motivo]', d).value, p_fecha: $('[name=fecha]', d).value })); avisar('Movimiento anulado'); await cargarCatalogos(); mostrar(); },
+    { textoGuardar: 'Anular movimiento' });
+}
+
+function formMovimiento(m, M) {
+  const nuevo = M.estado === 'nuevo', T = M.tipo;
+  const conCosto = T === 'entrada' || T === 'ajuste', conCta = T !== 'traslado';
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>${nuevo ? 'Nueva' : ''} ${TIPOS_MOV[T].toLowerCase()}${nuevo ? '' : ' en borrador'}</h1><p><a href="#movimientos">← Volver a movimientos</a></p></div>
+      <div class="acciones">
+        ${nuevo ? '' : '<button class="btn peligro" id="b-eliminar">Eliminar borrador</button>'}
+        <button class="btn sec" id="b-guardar">Guardar borrador</button>
+        <button class="btn" id="b-aplicar">Aplicar</button>
+      </div></div>
+    ${nuevo ? `<div class="pestanas">${Object.entries(TIPOS_MOV).map(([k, v]) => `<a href="#movimiento/nuevo-${k}" class="${k === T ? 'activo' : ''}">${v}</a>`).join('')}</div>` : ''}
+    <div class="tarjeta"><div class="rejilla">
+      <label class="campo">Fecha<input type="date" id="m-fecha" value="${M.fecha}"></label>
+      <label class="campo">${T === 'traslado' ? 'Bodega de origen' : 'Bodega'}<select id="m-bod">${opcionesBodega(bodegasAccesibles(), M.bodega_id)}</select></label>
+      ${T === 'traslado' ? `<label class="campo">Bodega de destino<select id="m-dest">${opcionesBodega(cache.bodegas.filter(b => b.activa), M.bodega_destino_id, '— Elija —')}</select></label>` : ''}
+      <label class="campo">Referencia<input id="m-ref" value="${esc(M.referencia)}" placeholder="${T === 'entrada' ? 'Factura del proveedor' : T === 'salida' ? 'Requisa, proyecto…' : 'Documento'}"></label>
+      <label class="campo ancho">Concepto<input id="m-concepto" value="${esc(M.concepto)}" placeholder="${{ entrada: 'Compra a …, donación de …', salida: 'Materiales para el proyecto …', traslado: 'Envío de materiales a …', ajuste: 'Conteo físico del …' }[T]}"></label>
+      ${conCta ? `<label class="campo" style="grid-column:span 2">Cuenta contable de contrapartida<input id="m-cta" list="dl-ctas" value="${esc(etiquetaCuenta(cuentaPorId(M.cuenta_contrapartida_id)))}"><span class="muted" style="font-weight:400">${{ entrada: 'A quién se le debe o con qué se pagó (Proveedores, Bancos…)', salida: 'A qué gasto o programa se carga', ajuste: 'Cuenta de sobrantes y faltantes' }[T]}</span></label>` : ''}
+      ${T === 'salida' || T === 'ajuste' ? `<label class="campo">Centro de costo<select id="m-cc">${opcionesCentro(M.centro_costo_id)}</select></label>` : ''}
+    </div>${datalistCuentas('dl-ctas', true)}</div>
+    <div class="tarjeta">
+      ${T === 'ajuste' ? '<div class="aviso">Escriba la diferencia encontrada: positiva si sobra (entra) y negativa si falta (sale). Use "Contado" para calcularla a partir del conteo físico.</div>' : ''}
+      <div class="envoltura"><table class="lineas">
+        <thead><tr><th class="c-cuenta">Producto</th><th style="width:110px">Unidad</th><th class="num" style="width:110px">Existencia</th>
+          ${T === 'ajuste' ? '<th class="num c-monto">Contado</th>' : ''}<th class="num c-monto">Cantidad</th>
+          ${conCosto ? `<th class="num c-monto">Costo unit. C$${T === 'ajuste' ? ' (opcional)' : ''}</th><th class="num c-monto">Total C$</th>` : ''}<th>Descripción</th><th></th></tr></thead>
+        <tbody id="cuerpo"></tbody>
+      </table></div>
+      ${datalistProductos('dl-prod')}
+      <div class="acciones" style="margin-top:10px"><button class="btn sec chico" id="b-linea">+ Agregar línea</button></div>
+      <div class="totales" id="totales"></div>
+    </div>`;
+
+  let exist = {};
+  const cargarExist = async () => {
+    const b = Number($('#m-bod').value);
+    const rows = await q(sb.from('existencias').select('*').eq('bodega_id', b)).catch(() => []);
+    exist = {}; rows.forEach(r => exist[r.producto_id] = Number(r.cantidad));
+    pintar();
+  };
+  const factorDe = l => { const p = productoPorId(l.producto_id); return unidadesDe(p).find(u => u.unidad_id === Number(l.unidad_id))?.factor || 1; };
+  const pintar = () => {
+    $('#cuerpo').innerHTML = M.lineas.map((l, i) => {
+      const p = productoPorId(l.producto_id), fac = factorDe(l), ex = p ? (exist[p.id] || 0) / fac : null;
+      return `<tr data-i="${i}">
+        <td><input list="dl-prod" data-f="producto" value="${esc(etiquetaProducto(p))}" placeholder="Código o nombre"></td>
+        <td><select data-f="unidad_id">${p ? unidadesDe(p).map(u => `<option value="${u.unidad_id}" ${u.unidad_id === Number(l.unidad_id || p.unidad_id) ? 'selected' : ''}>${esc(codUnidad(u.unidad_id))}${u.factor !== 1 ? ' ×' + fmtQ(u.factor) : ''}</option>`).join('') : '<option value="">—</option>'}</select></td>
+        <td class="num muted">${p ? fmtQ(Math.round(ex * 10000) / 10000) : ''}</td>
+        ${T === 'ajuste' ? `<td><input class="monto" data-f="contado" inputmode="decimal" placeholder="${p ? fmtQ(ex) : ''}"></td>` : ''}
+        <td><input class="monto" data-f="cantidad" inputmode="decimal" value="${l.cantidad ? fmtQ(l.cantidad) : ''}"></td>
+        ${conCosto ? `<td><input class="monto" data-f="costo" inputmode="decimal" value="${l.costo !== '' && l.costo !== undefined && l.costo !== null ? l.costo : ''}"></td>
+          <td class="num" data-sub>${l.cantidad && l.costo ? fmt(num(l.cantidad) * num(l.costo)) : ''}</td>` : ''}
+        <td><input data-f="descripcion" value="${esc(l.descripcion)}"></td>
+        <td><button class="btn sec chico" data-quitar title="Quitar">✕</button></td></tr>`;
+    }).join('');
+    totales();
+  };
+  const totales = () => {
+    const n = M.lineas.filter(l => l.producto_id && num(l.cantidad)).length;
+    const t = M.lineas.reduce((s, l) => s + (conCosto && l.costo !== '' && l.costo !== undefined ? num(l.cantidad) * num(l.costo) : 0), 0);
+    $('#totales').innerHTML = `<span>Líneas: <b>${n}</b></span>${T === 'entrada' ? `<span>Total: <b>C$ ${fmt(t)}</b></span>` : `<span class="muted">El costo se calcula al promedio al aplicar</span>`}`;
+  };
+  const cuerpo = $('#cuerpo');
+  cuerpo.addEventListener('input', e => {
+    const tr = e.target.closest('tr'), l = M.lineas[Number(tr.dataset.i)], f = e.target.dataset.f;
+    if (f === 'cantidad' || f === 'costo') {
+      l[f] = e.target.value;
+      const v = num(e.target.value);
+      e.target.classList.toggle('invalido', isNaN(v) || (f === 'costo' && v < 0) || (f === 'cantidad' && T !== 'ajuste' && v < 0));
+      const sub = $('[data-sub]', tr); if (sub) sub.textContent = num(l.cantidad) && l.costo !== '' ? fmt(num(l.cantidad) * num(l.costo)) : '';
+      totales();
+    } else if (f === 'contado') {
+      const p = productoPorId(l.producto_id); if (!p) return;
+      const dif = Math.round((num(e.target.value) - (exist[p.id] || 0) / factorDe(l)) * 10000) / 10000;
+      l.cantidad = e.target.value === '' ? '' : dif;
+      $('[data-f=cantidad]', tr).value = e.target.value === '' ? '' : fmtQ(dif);
+      totales();
+    } else if (f === 'descripcion') l.descripcion = e.target.value;
+  });
+  cuerpo.addEventListener('change', e => {
+    const tr = e.target.closest('tr'); if (!tr) return;
+    const l = M.lineas[Number(tr.dataset.i)], f = e.target.dataset.f;
+    if (f === 'producto') {
+      const p = productoDesdeTexto(e.target.value);
+      if (!p && e.target.value.trim()) { avisar('Elija un producto activo de la lista', 'error'); e.target.classList.add('invalido'); return; }
+      l.producto_id = p?.id || null; l.unidad_id = p?.unidad_id || null;
+      if (p && T === 'entrada' && (l.costo === '' || l.costo === undefined) && Number(p.costo_promedio)) l.costo = Number(p.costo_promedio);
+      pintar();
+      $(`tr[data-i="${tr.dataset.i}"] [data-f=cantidad]`)?.focus();
+    } else if (f === 'unidad_id') { l.unidad_id = Number(e.target.value); pintar(); }
+  });
+  cuerpo.addEventListener('click', e => {
+    if (!e.target.closest('[data-quitar]')) return;
+    M.lineas.splice(Number(e.target.closest('tr').dataset.i), 1); if (!M.lineas.length) M.lineas.push({});
+    pintar();
+  });
+  $('#b-linea').onclick = () => { M.lineas.push({}); pintar(); $(`tr[data-i="${M.lineas.length - 1}"] [data-f=producto]`).focus(); };
+  $('#m-bod').onchange = cargarExist;
+
+  const datos = () => {
+    let cta = null;
+    if (conCta) { const c = cuentaDesdeTexto($('#m-cta').value); if (!c) throw new Error('Elija una cuenta contable de contrapartida que acepte movimientos'); cta = c.id; }
+    return {
+      id: nuevo ? null : M.id, tipo: T, fecha: $('#m-fecha').value, bodega_id: Number($('#m-bod').value),
+      bodega_destino_id: T === 'traslado' ? Number($('#m-dest').value) || null : null,
+      concepto: $('#m-concepto').value, referencia: $('#m-ref').value, cuenta_contrapartida_id: cta,
+      centro_costo_id: $('#m-cc') ? Number($('#m-cc').value) || null : null,
+      lineas: M.lineas.filter(l => l.producto_id || num(l.cantidad)).map(l => ({ producto_id: l.producto_id, unidad_id: l.unidad_id, cantidad: num(l.cantidad),
+        costo: conCosto && l.costo !== '' && l.costo !== undefined && l.costo !== null ? num(l.costo) : null, descripcion: l.descripcion || '' }))
+    };
+  };
+  const guardar = async (aplicar, b) => {
+    if ($$('#cuerpo .invalido').length) return avisar('Hay campos marcados en rojo por corregir', 'error');
+    let p; try { p = datos(); } catch (e) { return avisar(e.message, 'error'); }
+    if (!p.concepto.trim()) return avisar('Escriba el concepto', 'error');
+    if (!p.lineas.length) return avisar('Agregue al menos un producto', 'error');
+    if (p.lineas.some(l => !l.producto_id)) return avisar('Hay líneas con cantidad pero sin producto', 'error');
+    if (p.lineas.some(l => !l.cantidad)) return avisar('Hay productos sin cantidad', 'error');
+    if (T === 'entrada' && p.lineas.some(l => l.costo === null)) return avisar('Indique el costo unitario de cada producto', 'error');
+    if (aplicar && !confirm('Al aplicar se mueven las existencias y se registra el asiento contable. Después solo se podrá anular. ¿Continuar?')) return;
+    b.disabled = true;
+    try {
+      const id = await q(sb.rpc('guardar_movimiento', { p, p_aplicar: aplicar }));
+      avisar(aplicar ? 'Movimiento aplicado' : 'Borrador guardado');
+      await cargarCatalogos();
+      if (location.hash === `#movimiento/${id}`) mostrar(); else location.hash = `movimiento/${id}`;
+    } catch (e) { fallo(e); } finally { b.disabled = false; }
+  };
+  $('#b-guardar').onclick = e => guardar(false, e.currentTarget);
+  $('#b-aplicar').onclick = e => guardar(true, e.currentTarget);
+  if ($('#b-eliminar')) $('#b-eliminar').onclick = async () => {
+    if (!confirm('¿Eliminar este borrador?')) return;
+    try { await q(sb.rpc('eliminar_movimiento', { p_id: M.id })); avisar('Borrador eliminado'); location.hash = 'movimientos'; } catch (e) { fallo(e); }
+  };
+  cargarExist();
+}
+
+// ============================================================
+// Kardex
+// ============================================================
+let paramKardex = null;
+async function vKardex(m, arg) {
+  await cargarCatalogos();
+  if (!paramKardex) { const [, h] = rangoMes(); paramKardex = { producto: '', bodega: '', desde: h.slice(0, 4) + '-01-01', hasta: h }; }
+  if (arg) paramKardex.producto = Number(arg);
+  const p = paramKardex;
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Kardex</h1><p>Entradas, salidas y saldo de un producto, al costo promedio</p></div>
+      <div class="acciones no-imprimir"><button class="btn sec" id="b-csv" disabled>Exportar CSV</button><button class="btn sec" onclick="print()">Imprimir</button></div></div>
+    <div class="tarjeta">
+      <form class="filtros" id="f-k">
+        <label class="campo" style="flex:1;min-width:240px">Producto<input name="producto" list="dl-prodk" value="${esc(etiquetaProducto(productoPorId(p.producto)))}" required placeholder="Código o nombre"></label>
+        <label class="campo">Bodega<select name="bodega">${opcionesBodega(bodegasAccesibles(false), p.bodega, puede('inventario.todas_bodegas') ? 'Todas' : 'Todas las mías')}</select></label>
+        <label class="campo">Desde<input type="date" name="desde" value="${p.desde}"></label>
+        <label class="campo">Hasta<input type="date" name="hasta" value="${p.hasta}"></label>
+        <button class="btn">Consultar</button>
+      </form>${datalistProductos('dl-prodk', false)}
+      <div id="res"></div>
+    </div>`;
+  $('#f-k').onsubmit = e => {
+    e.preventDefault(); const d = new FormData(e.target);
+    const pr = cache.productos.find(x => x.codigo === String(d.get('producto')).split(' — ')[0].trim());
+    if (!pr) return avisar('Elija un producto de la lista', 'error');
+    Object.assign(paramKardex, { producto: pr.id, bodega: d.get('bodega'), desde: d.get('desde'), hasta: d.get('hasta') });
+    consultar();
+  };
+  const consultar = async () => {
+    const pr = productoPorId(p.producto); if (!pr) return;
+    $('#res').innerHTML = '<div class="cargando">Cargando…</div>';
+    try {
+      const filas = await q(sb.rpc('kardex', { p_producto: pr.id, p_bodega: p.bodega ? Number(p.bodega) : null, p_desde: p.desde, p_hasta: p.hasta }));
+      const u = esc(codUnidad(pr.unidad_id));
+      const te = filas.reduce((s, f) => s + Number(f.entrada || 0), 0), ts = filas.reduce((s, f) => s + Number(f.salida || 0), 0);
+      $('#res').innerHTML = `<div class="reporte-titulo"><img src="logo.png" alt="Amigos for Christ"><h2>Kardex · ${esc(etiquetaProducto(pr))}</h2>
+        <div class="muted">${p.bodega ? esc(bodegaPorId(p.bodega)?.nombre) : 'Todas las bodegas'} · Del ${fecha(p.desde)} al ${fecha(p.hasta)} · Cantidades en ${u}</div></div>
+        <div class="envoltura"><table><thead><tr><th>Fecha</th><th>Documento</th><th>Concepto</th><th>Bodega</th><th class="num">Entrada</th><th class="num">Salida</th><th class="num">Saldo</th><th class="num">Costo unit.</th><th class="num">Costo total</th><th class="num">Costo prom.</th></tr></thead>
+        <tbody>${filas.map(f => `<tr class="${f.movimiento_id ? 'clic' : 'grupo'}" ${f.movimiento_id ? `onclick="location.hash='movimiento/${f.movimiento_id}'"` : ''}>
+          <td>${fecha(f.fecha)}</td><td>${esc(f.documento || '')}</td><td>${esc(f.concepto)}</td><td>${esc(f.bodega || '')}</td>
+          <td class="num">${fmtQ(f.entrada)}</td><td class="num">${fmtQ(f.salida)}</td><td class="num"><b>${fmtQ(f.saldo)}</b></td>
+          <td class="num">${f.costo_unitario !== null ? fmt(f.costo_unitario) : ''}</td><td class="num">${f.costo_total !== null ? fmt(f.costo_total) : ''}</td><td class="num">${f.costo_promedio !== null ? fmt(f.costo_promedio) : ''}</td></tr>`).join('')}
+          <tr class="total"><td colspan="4">Totales del período</td><td class="num">${fmtQ(te)}</td><td class="num">${fmtQ(ts)}</td><td class="num">${fmtQ(filas.at(-1)?.saldo)}</td><td colspan="3"></td></tr>
+        </tbody></table></div>`;
+      $('#b-csv').disabled = false;
+      $('#b-csv').onclick = () => csv(`kardex_${pr.codigo}_${p.desde}_${p.hasta}.csv`, [['Fecha', 'Documento', 'Concepto', 'Bodega', 'Entrada', 'Salida', 'Saldo', 'Costo unitario', 'Costo total', 'Costo promedio'],
+        ...filas.map(f => [f.fecha, f.documento || '', f.concepto, f.bodega || '', f.entrada ?? '', f.salida ?? '', f.saldo, f.costo_unitario ?? '', f.costo_total ?? '', f.costo_promedio ?? ''])]);
+    } catch (e) { $('#res').innerHTML = `<div class="aviso error">${esc(mensajeError(e))}</div>`; }
+  };
+  if (p.producto) consultar(); else $('#res').innerHTML = '<div class="vacio">Elija un producto y presione Consultar.</div>';
+}
+
+// ============================================================
+// Productos, unidades y categorías
+// ============================================================
+let filtroProd = { texto: '', categoria: '' };
+async function vProductos(m) {
+  await cargarCatalogos();
+  const cat = puede('inventario.catalogo');
+  const f = filtroProd, t = f.texto.toLowerCase();
+  const filas = cache.productos.filter(p => (!t || (p.codigo + ' ' + p.nombre).toLowerCase().includes(t)) && (!f.categoria || p.categoria_id === Number(f.categoria)));
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Productos</h1><p>${cache.productos.length} productos. La existencia se lleva en la unidad base; las presentaciones convierten al registrar.</p></div>
+      <div class="acciones">${cat ? '<button class="btn" id="b-nuevo">+ Nuevo producto</button><button class="btn sec" id="b-unid">Unidades</button><button class="btn sec" id="b-cat">Categorías</button>' : ''}<button class="btn sec" id="b-csv">Exportar CSV</button></div></div>
+    <div class="tarjeta">
+      <form class="filtros" id="f-p">
+        <label class="campo" style="flex:1">Buscar<input name="texto" value="${esc(f.texto)}" placeholder="Código o nombre"></label>
+        <label class="campo">Categoría<select name="categoria"><option value="">Todas</option>${cache.categorias.map(c => `<option value="${c.id}" ${Number(f.categoria) === c.id ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></label>
+        <button class="btn sec">Filtrar</button></form>
+      <div class="envoltura"><table>
+        <thead><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th>Unidad base</th><th>Presentaciones</th><th class="num">Mínimo</th><th class="num">Costo prom. C$</th><th></th></tr></thead>
+        <tbody id="t-p">${filas.map(p => `<tr class="${cat ? 'clic' : ''}" data-id="${p.id}"><td>${esc(p.codigo)}</td><td>${esc(p.nombre)}</td>
+          <td>${esc(cache.categorias.find(c => c.id === p.categoria_id)?.nombre || '')}</td><td>${esc(codUnidad(p.unidad_id))}</td>
+          <td class="muted">${unidadesDe(p).slice(1).map(u => `${esc(codUnidad(u.unidad_id))} = ${fmtQ(u.factor)} ${esc(codUnidad(p.unidad_id))}`).join(' · ')}</td>
+          <td class="num">${Number(p.stock_minimo) ? fmtQ(p.stock_minimo) : ''}</td><td class="num">${fmt(p.costo_promedio)}</td>
+          <td>${p.activo ? '' : '<span class="etiqueta e-anulado">Inactivo</span>'}</td></tr>`).join('') || '<tr><td colspan="8" class="vacio">Sin productos</td></tr>'}</tbody>
+      </table></div></div>`;
+  $('#f-p').onsubmit = e => { e.preventDefault(); filtroProd = Object.fromEntries(new FormData(e.target)); vProductos(m); };
+  $('#b-csv').onclick = () => csv('productos.csv', [['Codigo', 'Nombre', 'Categoria', 'Unidad', 'Minimo', 'Costo promedio', 'Activo'],
+    ...cache.productos.map(p => [p.codigo, p.nombre, cache.categorias.find(c => c.id === p.categoria_id)?.nombre || '', codUnidad(p.unidad_id), p.stock_minimo, p.costo_promedio, p.activo ? 'Si' : 'No'])]);
+  if (!cat) return;
+  $('#b-nuevo').onclick = () => modalProducto(m);
+  $('#t-p').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) modalProducto(m, productoPorId(tr.dataset.id)); };
+  $('#b-unid').onclick = () => modalLista(m, 'unidades', 'Unidades de medida', [['codigo', 'Código'], ['nombre', 'Nombre']]);
+  $('#b-cat').onclick = () => modalLista(m, 'categorias_producto', 'Categorías de productos', [['nombre', 'Nombre']]);
+}
+
+function modalProducto(m, p = null) {
+  let pres = p ? cache.presentaciones.filter(x => x.producto_id === p.id).map(x => ({ unidad_id: x.unidad_id, factor: Number(x.factor) })) : [];
+  const optsU = sel => cache.unidades.map(u => `<option value="${u.id}" ${u.id === Number(sel) ? 'selected' : ''}>${esc(u.codigo)} · ${esc(u.nombre)}</option>`).join('');
+  const d = abrirModal(`<h2>${p ? 'Editar producto' : 'Nuevo producto'}</h2>
+    <div class="rejilla">
+      <label class="campo">Código<input name="codigo" value="${esc(p?.codigo || '')}" required></label>
+      <label class="campo">Categoría<select name="categoria_id"><option value="">—</option>${cache.categorias.map(c => `<option value="${c.id}" ${c.id === p?.categoria_id ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></label>
+      <label class="campo ancho">Nombre<input name="nombre" value="${esc(p?.nombre || '')}" required></label>
+      <label class="campo">Unidad base<select name="unidad_id" required>${optsU(p?.unidad_id || cache.unidades.find(u => u.codigo === 'UND')?.id)}</select></label>
+      <label class="campo">Existencia mínima<input name="stock_minimo" inputmode="decimal" value="${p ? fmtQ(p.stock_minimo) : '0'}"></label>
+      <label class="campo ancho">Descripción<input name="descripcion" value="${esc(p?.descripcion || '')}"></label>
+      <label class="campo chk"><input type="checkbox" name="activo" ${!p || p.activo ? 'checked' : ''}> Activo</label>
+    </div>
+    <h3 style="margin-top:14px">Presentaciones</h3>
+    <p class="muted" style="font-size:13px;margin:4px 0 8px">Otras unidades en que se compra o despacha. Ej.: Caja = 24 unidades; Quintal = 100 libras.</p>
+    <div id="pres"></div><button type="button" class="btn sec chico" id="b-pres">+ Agregar presentación</button>`,
+    async d => {
+      const f = new FormData($('form', d));
+      const v = { codigo: String(f.get('codigo')).trim(), nombre: String(f.get('nombre')).trim(), categoria_id: Number(f.get('categoria_id')) || null,
+        unidad_id: Number(f.get('unidad_id')), stock_minimo: num(f.get('stock_minimo')) || 0, descripcion: String(f.get('descripcion')).trim() || null, activo: f.get('activo') === 'on' };
+      const ps = pres.filter(x => x.unidad_id && num(x.factor) > 0);
+      if (ps.some(x => Number(x.unidad_id) === v.unidad_id)) { avisar('Una presentación no puede usar la unidad base', 'error'); return false; }
+      if (new Set(ps.map(x => Number(x.unidad_id))).size !== ps.length) { avisar('Hay dos presentaciones con la misma unidad', 'error'); return false; }
+      let id = p?.id;
+      if (p) await q(sb.from('productos').update(v).eq('id', p.id));
+      else id = (await q(sb.from('productos').insert(v).select('id').single())).id;
+      await q(sb.from('producto_presentaciones').delete().eq('producto_id', id));
+      if (ps.length) await q(sb.from('producto_presentaciones').insert(ps.map(x => ({ producto_id: id, unidad_id: Number(x.unidad_id), factor: num(x.factor) }))));
+      avisar('Producto guardado'); vProductos(m);
+    }, { extraIzq: p ? '<button type="button" class="btn peligro" id="b-borrar">Eliminar</button>' : '' });
+  const pintarPres = () => {
+    $('#pres', d).innerHTML = pres.map((x, i) => `<div class="filtros" style="margin-bottom:6px" data-i="${i}">
+      <label class="campo">Unidad<select data-f="unidad_id"><option value="">—</option>${optsU(x.unidad_id)}</select></label>
+      <label class="campo">Equivale a (unidades base)<input data-f="factor" inputmode="decimal" value="${x.factor || ''}"></label>
+      <button type="button" class="btn sec chico" data-q>✕</button></div>`).join('');
+  };
+  $('#pres', d).addEventListener('input', e => { const i = Number(e.target.closest('[data-i]').dataset.i); pres[i][e.target.dataset.f] = e.target.value; });
+  $('#pres', d).addEventListener('change', e => { const i = Number(e.target.closest('[data-i]').dataset.i); pres[i][e.target.dataset.f] = e.target.value; });
+  $('#pres', d).addEventListener('click', e => { if (e.target.closest('[data-q]')) { pres.splice(Number(e.target.closest('[data-i]').dataset.i), 1); pintarPres(); } });
+  $('#b-pres', d).onclick = () => { pres.push({ unidad_id: '', factor: '' }); pintarPres(); };
+  pintarPres();
+  if (p) $('#b-borrar', d).onclick = async () => {
+    if (!confirm(`¿Eliminar el producto ${p.codigo}?`)) return;
+    try { await q(sb.from('productos').delete().eq('id', p.id)); d.close(); avisar('Producto eliminado'); vProductos(m); } catch (e) { fallo(e); }
+  };
+}
+
+// Editor simple de una tabla de catálogo (unidades, categorías)
+function modalLista(m, tabla, titulo, campos) {
+  const filas = tabla === 'unidades' ? cache.unidades : cache.categorias;
+  const d = abrirModal(`<h2>${esc(titulo)}</h2>
+    <div class="envoltura" style="max-height:340px;overflow:auto"><table><tbody>${filas.map(x => `<tr>${campos.map(([k]) => `<td>${esc(x[k])}</td>`).join('')}
+      <td class="num"><button type="button" class="btn sec chico" data-borrar="${x.id}">Eliminar</button></td></tr>`).join('')}</tbody></table></div>
+    <h3 style="margin-top:14px">Agregar</h3><div class="filtros">${campos.map(([k, t]) => `<label class="campo">${t}<input name="${k}" required></label>`).join('')}</div>`,
+    async d => {
+      const v = Object.fromEntries(campos.map(([k]) => [k, $(`[name=${k}]`, d).value.trim()]));
+      await q(sb.from(tabla).insert(v)); avisar('Agregado'); await cargarCatalogos(); vProductos(m);
+    }, { textoGuardar: 'Agregar' });
+  $$('[data-borrar]', d).forEach(b => b.onclick = async () => {
+    try { await q(sb.from(tabla).delete().eq('id', Number(b.dataset.borrar))); d.close(); avisar('Eliminado'); vProductos(m); } catch (e) { fallo(e); }
+  });
+}
+
+// ============================================================
+// Bodegas y cuentas contables del inventario
+// ============================================================
+async function vBodegas(m) {
+  await cargarCatalogos();
+  const [ex, par] = await Promise.all([q(sb.from('existencias').select('*')), q(sb.from('inv_parametros').select('*').eq('id', 1).maybeSingle())]);
+  const cat = puede('inventario.catalogo'), ctaEdit = cat || puede('contabilidad.editar');
+  const resumen = b => { const xs = ex.filter(e => e.bodega_id === b.id && Number(e.cantidad)); return { n: xs.length, v: xs.reduce((s, e) => s + Number(e.cantidad) * Number(productoPorId(e.producto_id)?.costo_promedio || 0), 0), vis: cache.misBodegas.includes(b.id) }; };
+  const activos = cache.cuentas.filter(c => c.acepta_movimientos && c.activa);
+  const selCta = (name, sel, filtro = () => true) => `<select name="${name}" ${ctaEdit ? '' : 'disabled'}><option value="">— Sin configurar —</option>${activos.filter(filtro).map(c => `<option value="${c.id}" ${c.id === Number(sel) ? 'selected' : ''}>${esc(etiquetaCuenta(c))}</option>`).join('')}</select>`;
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Bodegas</h1><p>${cache.bodegas.length} bodegas. Cada una puede usar su propia cuenta contable de inventario.</p></div>
+      ${cat ? '<button class="btn" id="b-nueva">+ Nueva bodega</button>' : ''}</div>
+    <div class="tarjeta"><div class="envoltura"><table>
+      <thead><tr><th>Código</th><th>Nombre</th><th>Ubicación</th><th>Cuenta de inventario</th><th class="num">Productos</th><th class="num">Valor C$</th><th></th></tr></thead>
+      <tbody id="t-b">${cache.bodegas.map(b => { const r = resumen(b); return `<tr class="${cat ? 'clic' : ''}" data-id="${b.id}"><td>${esc(b.codigo)}</td><td>${esc(b.nombre)}</td><td>${esc(b.ubicacion || '')}</td>
+        <td class="muted">${esc(etiquetaCuenta(cuentaPorId(b.cuenta_inventario_id)))}</td><td class="num">${r.vis ? r.n : ''}</td><td class="num">${r.vis ? fmt(r.v) : '<span class="muted">sin acceso</span>'}</td>
+        <td>${b.activa ? '' : '<span class="etiqueta e-anulado">Inactiva</span>'}</td></tr>`; }).join('') || '<tr><td colspan="7" class="vacio">Sin bodegas</td></tr>'}</tbody>
+    </table></div></div>
+    <div class="tarjeta"><h2>Cuentas contables del inventario</h2>
+      <p class="muted">Se proponen al registrar cada movimiento; en cada uno se pueden cambiar.</p>
+      <form id="f-par"><div class="rejilla">
+        <label class="campo">Entradas: contrapartida${selCta('cuenta_entrada_id', par?.cuenta_entrada_id)}<span class="muted" style="font-weight:400">Ej.: Proveedores</span></label>
+        <label class="campo">Salidas: cargo${selCta('cuenta_salida_id', par?.cuenta_salida_id)}<span class="muted" style="font-weight:400">Ej.: Costo de programas</span></label>
+        <label class="campo">Ajustes y diferencias${selCta('cuenta_ajuste_id', par?.cuenta_ajuste_id)}<span class="muted" style="font-weight:400">Sobrantes, faltantes y diferencias de costo</span></label>
+      </div>${ctaEdit ? '<div class="acciones" style="margin-top:12px"><button class="btn">Guardar cuentas</button></div>' : ''}</form></div>`;
+  $('#f-par').onsubmit = async e => {
+    e.preventDefault(); const f = new FormData(e.target);
+    try { await q(sb.from('inv_parametros').update({ cuenta_entrada_id: Number(f.get('cuenta_entrada_id')) || null, cuenta_salida_id: Number(f.get('cuenta_salida_id')) || null, cuenta_ajuste_id: Number(f.get('cuenta_ajuste_id')) || null }).eq('id', 1));
+      avisar('Cuentas guardadas'); } catch (err) { fallo(err); }
+  };
+  if (!cat) return;
+  const modal = (b = null) => {
+    const d = abrirModal(`<h2>${b ? 'Editar bodega' : 'Nueva bodega'}</h2><div class="rejilla">
+      <label class="campo">Código<input name="codigo" value="${esc(b?.codigo || '')}" required placeholder="B04"></label>
+      <label class="campo ancho">Nombre<input name="nombre" value="${esc(b?.nombre || '')}" required></label>
+      <label class="campo ancho">Ubicación<input name="ubicacion" value="${esc(b?.ubicacion || '')}" placeholder="Comunidad, municipio"></label>
+      <label class="campo ancho">Cuenta contable de inventario<select name="cuenta_inventario_id" required>${activos.filter(c => c.tipo === 'activo').map(c => `<option value="${c.id}" ${c.id === (b?.cuenta_inventario_id ?? cache.bodegas[0]?.cuenta_inventario_id) ? 'selected' : ''}>${esc(etiquetaCuenta(c))}</option>`).join('')}</select></label>
+      <label class="campo chk"><input type="checkbox" name="activa" ${!b || b.activa ? 'checked' : ''}> Activa</label></div>`,
+      async d => {
+        const f = new FormData($('form', d));
+        const v = { codigo: String(f.get('codigo')).trim(), nombre: String(f.get('nombre')).trim(), ubicacion: String(f.get('ubicacion')).trim() || null,
+          cuenta_inventario_id: Number(f.get('cuenta_inventario_id')), activa: f.get('activa') === 'on' };
+        if (b) await q(sb.from('bodegas').update(v).eq('id', b.id)); else await q(sb.from('bodegas').insert(v));
+        avisar('Bodega guardada'); vBodegas(m);
+      }, { extraIzq: b ? '<button type="button" class="btn peligro" id="b-borrar">Eliminar</button>' : '' });
+    if (b) $('#b-borrar', d).onclick = async () => {
+      if (!confirm(`¿Eliminar la bodega ${b.codigo}?`)) return;
+      try { await q(sb.from('bodegas').delete().eq('id', b.id)); d.close(); avisar('Bodega eliminada'); vBodegas(m); } catch (e) { fallo(e); }
+    };
+  };
+  $('#b-nueva').onclick = () => modal();
+  $('#t-b').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) modal(bodegaPorId(tr.dataset.id)); };
 }
 
 iniciar();
