@@ -292,7 +292,9 @@ dialog .pie{display:flex;justify-content:space-between;gap:8px;padding:14px 24px
 // Supabase; si se dejan vacíos, la app los pide la primera vez.
 // La clave "anon" es pública: la seguridad la da RLS en la base.
 // ============================================================
-const CONFIG = { url: 'https://qrjhpkicapbtnzagbnsx.supabase.co', anonKey: 'sb_publishable_GDf_Q-GC_y-FomxtyV14ng_FqI2n2pR' };
+const CONFIG = { url: 'https://qrjhpkicapbtnzagbnsx.supabase.co', anonKey: 'sb_publishable_GDf_Q-GC_y-FomxtyV14ng_FqI2n2pR',
+  // Servidor de la app de marcaje: envía las colillas por correo desde el buzón de Microsoft 365
+  marcajeApi: 'https://script.google.com/macros/s/AKfycbyJUuwkbhTXz-vnFaIMnzZpiLM47KFOcBOEFqNC_wrTnT3hxKyRWtXDoLgX5344pItA/exec' };
 const ORGANIZACION = 'Amigos for Christ';
 
 // ---------- utilidades ----------
@@ -334,6 +336,8 @@ const PERMISOS = [
   ['planilla.aprobar', 'Planilla', 'Aprobar, devolver y anular planillas (nunca las que uno elaboró)', 'Aprobar planillas'],
   ['planilla.config', 'Planilla', 'Tasas legales, tabla del IR, conceptos y conexión con el marcaje', 'Configurar planilla'],
   ['vacaciones.aprobar', 'Planilla', 'Aprobar los días extra que suman a vacaciones', 'Aprobar días extra'],
+  ['activos.ver', 'Activos fijos', 'Ver activos fijos, su depreciación y valor en libros', 'Ver activos'],
+  ['activos.editar', 'Activos fijos', 'Registrar activos, depreciación mensual y bajas', 'Administrar activos'],
   ['admin.usuarios', 'Administración', 'Usuarios, roles y bitácora', 'Usuarios y roles']
 ];
 const TIPOS_MOV = { entrada: 'Entrada', salida: 'Salida', traslado: 'Traslado', ajuste: 'Ajuste' };
@@ -432,7 +436,7 @@ async function cargarCatalogos() {
     inv ? q(sb.from('producto_presentaciones').select('*')) : nada,
     inv ? q(sb.from('productos').select('*').order('codigo')) : nada,
     q(sb.from('perfil_bodegas').select('*').eq('perfil_id', yo.id)),
-    puede('bancos.ver') ? q(sb.from('cuentas_bancarias').select('*').order('id')) : nada
+    puede('bancos.ver') || puede('planilla.aprobar') ? q(sb.from('cuentas_bancarias').select('*').order('id')) : nada
   ]);
   cache.cuentas = cu.sort(ordenCodigo); cache.centros = ce; cache.perfiles = pe; cache.roles = ro;
   cache.bodegas = bo; cache.unidades = un; cache.categorias = ca; cache.presentaciones = pr; cache.productos = prod;
@@ -571,6 +575,7 @@ const MENU = [
   ['g', 'Bancos'], ['cheques', 'Cheques', 'bancos.ver'], ['bancos', 'Cuentas bancarias', 'bancos.ver'],
   ['g', 'Planilla'], ['planillas', 'Planillas', 'planilla.ver'], ['colaboradores', 'Colaboradores', 'planilla.ver'], ['vacaciones', 'Vacaciones', 'planilla.ver'],
   ['vacaciones', 'Días extra y vacaciones', 'vacaciones.aprobar'], ['config-planilla', 'Configuración de planilla', 'planilla.config'],
+  ['g', 'Activos fijos'], ['activos', 'Activos', 'activos.ver'], ['depreciacion', 'Depreciación mensual', 'activos.ver'],
   ['g', 'Inventario'], ['existencias', 'Existencias', 'inventario.ver'], ['movimientos', 'Movimientos', 'inventario.ver'], ['kardex', 'Kardex', 'inventario.ver'],
   ['productos', 'Productos', 'inventario.ver'], ['bodegas', 'Bodegas', 'inventario.ver'],
   ['g', 'Administración'], ['periodos', 'Períodos y cierre', 'contabilidad.ver'], ['usuarios', 'Usuarios', 'admin.usuarios'], ['roles', 'Roles y permisos', 'admin.usuarios'], ['bitacora', 'Bitácora', 'admin.usuarios']
@@ -600,6 +605,8 @@ const ICONOS = {
   roles: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4',
   bitacora: 'M12 8v4l3 2M12 3a9 9 0 1 0 9 9',
   planillas: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
+  activos: 'M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6M9 11h.01M15 11h.01',
+  depreciacion: 'M3 4v16h18M7 8l4 4 3-3 6 6M20 11v4h-4',
   colaboradores: 'M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0zM4 21a8 8 0 0 1 16 0',
   vacaciones: 'M12 3v2M12 19v2M5 5l1.5 1.5M17.5 17.5L19 19M3 12h2M19 12h2M5 19l1.5-1.5M17.5 6.5L19 5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
   'config-planilla': 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 1.2 14H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 7a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 1.2V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H23a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'
@@ -617,7 +624,7 @@ function armarEstructura() {
   <div class="barra-movil"><button id="b-menu">☰ Menú</button><img src="logo-blanco.png" alt="Amigos for Christ"><button class="der" id="b-buscar-m">⌕</button></div>
   <div class="app">
     <aside class="lateral" id="lateral">
-      <div><img src="logo-blanco.png" alt="Amigos for Christ"><div class="sub">Contabilidad · Bancos · Inventario · Planilla</div></div>
+      <div><img src="logo-blanco.png" alt="Amigos for Christ"><div class="sub">Contabilidad · Bancos · Inventario · Planilla · Activos</div></div>
       <button class="buscador" id="b-buscar">⌕ Buscar… <kbd>Ctrl K</kbd></button>
       <nav class="nav">${menuVisible().map(([r, t]) => r === 'g' ? `<div class="grupo">${t}</div>` : `<a href="#${r}" data-ruta="${r}">${icono(r)}<span>${t}</span></a>`).join('')}</nav>
       <div class="usuario"><div class="avatar">${esc(iniciales(yo.nombre || yo.correo))}</div><b>${esc(yo.nombre || yo.correo)}</b><span>${esc(nombreRol(yo.rol_id))}</span>
@@ -649,9 +656,10 @@ const RUTAS = {
   mayor: vMayor, balanza: vBalanza, estados: vEstados, periodos: vPeriodos, usuarios: vUsuarios, bitacora: vBitacora,
   roles: vRoles, existencias: vExistencias, movimientos: vMovimientos, movimiento: vMovimiento, kardex: vKardex,
   productos: vProductos, bodegas: vBodegas, bancos: vBancos, cheques: vCheques, cheque: vCheque,
-  planillas: vPlanillas, planilla: vPlanilla, colaboradores: vColaboradores, colaborador: vColaboradores, vacaciones: vVacaciones, 'config-planilla': vConfigPlanilla
+  planillas: vPlanillas, planilla: vPlanilla, colaboradores: vColaboradores, colaborador: vColaboradores, vacaciones: vVacaciones, 'config-planilla': vConfigPlanilla,
+  activos: vActivos, depreciacion: vDepreciacion, liquidacion: vLiquidacion
 };
-const PADRE_RUTA = { asiento: 'asientos', movimiento: 'movimientos', cheque: 'cheques', planilla: 'planillas', colaborador: 'colaboradores' };
+const PADRE_RUTA = { asiento: 'asientos', movimiento: 'movimientos', cheque: 'cheques', planilla: 'planillas', colaborador: 'colaboradores', liquidacion: 'planillas' };
 const ESQUELETO = `<div class="esqueleto"><div class="esq" style="height:56px;width:40%"></div><div class="kpis" style="margin:0">${'<div class="esq" style="height:96px"></div>'.repeat(4)}</div><div class="esq" style="height:280px"></div></div>`;
 let graficos = [];
 async function mostrar() {
@@ -712,7 +720,8 @@ async function vInicio(m) {
   ]);
   const plParaMi = (plPend || []).filter(p => p.creado_por !== yo.id);
   const rapidas = [
-    puede('planilla.editar') && ['planilla/nueva', 'planillas', 'Nueva planilla', 'Quincenal o mensual'],
+    puede('planilla.editar') && ['planilla/nueva', 'planillas', 'Nueva planilla', 'Quincenal, mensual o aguinaldo'],
+    puede('planilla.ver') && ['liquidacion', 'colaboradores', 'Calcular liquidación', 'Lo que le toca a quien sale'],
     puede('bancos.emitir') && ['cheque/nuevo', 'cheques', 'Nuevo cheque', 'Elaborar y enviar a aprobación'],
     editor() && ['asiento/nuevo', 'asientos', 'Nuevo asiento', 'Registro contable manual'],
     puede('inventario.editar') && ['movimiento/nuevo-entrada', 'existencias', 'Entrada a bodega', 'Compras y donaciones'],
@@ -2469,6 +2478,8 @@ async function buscarPaleta(txt) {
     puede('inventario.editar') && { g: 'Acciones', t: 'Nueva salida de bodega', h: '#movimiento/nuevo-salida', ic: 'movimientos' },
     puede('inventario.editar') && { g: 'Acciones', t: 'Nuevo traslado entre bodegas', h: '#movimiento/nuevo-traslado', ic: 'movimientos' },
     puede('planilla.editar') && { g: 'Acciones', t: 'Nueva planilla', h: '#planilla/nueva', ic: 'planillas' },
+    puede('planilla.ver') && { g: 'Acciones', t: 'Calcular liquidación', h: '#liquidacion', ic: 'colaboradores' },
+    puede('activos.editar') && { g: 'Acciones', t: 'Registrar depreciación del mes', h: '#depreciacion/nueva', ic: 'depreciacion' },
     { g: 'Acciones', t: document.documentElement.dataset.tema === 'oscuro' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro', fn: () => { aplicarTema(document.documentElement.dataset.tema === 'oscuro' ? 'claro' : 'oscuro'); mostrar(); }, ic: 'roles' }
   ].filter(Boolean);
   const coincide = x => !t || x.t.toLowerCase().includes(t);
@@ -2531,7 +2542,11 @@ $('#paleta').addEventListener('click', e => { if (e.target.id === 'paleta') cerr
 // Planilla, vacaciones y app de marcaje
 // ============================================================
 const ESTADOS_PLANILLA = { borrador: 'Borrador', por_aprobar: 'Por aprobar', aprobada: 'Aprobada', anulada: 'Anulada' };
-const TIPOS_VAC = { saldo_inicial: 'Saldo inicial', acumulado: 'Acumulado por planilla', tomadas: 'Vacaciones tomadas', dia_extra: 'Día extra trabajado', ajuste: 'Ajuste' };
+const TIPOS_VAC = { saldo_inicial: 'Saldo inicial', acumulado: 'Acumulado por planilla', tomadas: 'Vacaciones tomadas', dia_extra: 'Día extra trabajado', ajuste: 'Ajuste', liquidadas: 'Pagadas en liquidación' };
+const TIPOS_PL = { quincenal: 'Quincenal', mensual: 'Mensual', aguinaldo: 'Aguinaldo', liquidacion: 'Liquidación' };
+const MOTIVOS_SALIDA = { renuncia: 'Renuncia con preaviso', renuncia_sin_preaviso: 'Renuncia sin preaviso', despido_sin_causa: 'Despido sin causa justa (art. 45)',
+  despido_causa_justa: 'Despido con causa justa (art. 48)', mutuo_acuerdo: 'Mutuo acuerdo', fin_contrato: 'Fin de contrato por tiempo determinado', fallecimiento: 'Fallecimiento', otro: 'Otro' };
+const MOTIVOS_INDEMNIZA = ['renuncia', 'despido_sin_causa', 'mutuo_acuerdo'];
 const ESTADOS_VAC = { pendiente: 'Pendiente', aprobado: 'Aprobado', rechazado: 'Rechazado', anulado: 'Anulado' };
 const empleadoPorId = id => cache.empleados.find(e => e.id === Number(id));
 const centroCod = id => cache.centros.find(c => c.id === Number(id))?.codigo || '';
@@ -2541,7 +2556,9 @@ async function cargarEmpleados() {
 }
 const opcionesEmpleado = (sel, soloActivos = true) => cache.empleados.filter(e => !soloActivos || e.activo || e.id === Number(sel))
   .map(e => `<option value="${e.id}" ${e.id === Number(sel) ? 'selected' : ''}>${esc(e.nombre)}${e.cargo ? ' · ' + esc(e.cargo) : ''}</option>`).join('');
-const diasPagados = l => Number(l.salario_mensual) ? r2(Number(l.salario_periodo) * 30 / Number(l.salario_mensual)) : 0;
+const diasPagados = (l, P) => P && ['aguinaldo', 'liquidacion'].includes(P.tipo) ? r2(Number(l.dias_periodo) - Number(l.dias_no_pagados))
+  : Number(l.salario_mensual) ? r2(Number(l.salario_periodo) * 30 / Number(l.salario_mensual)) : 0;
+const nombreSalario = P => P?.tipo === 'aguinaldo' ? 'Aguinaldo' : P?.tipo === 'liquidacion' ? 'Salario pendiente' : 'Salario';
 const incompleto = e => e.activo && (!Number(e.salario_mensual) || !e.cedula);
 
 // ---------- Colaboradores ----------
@@ -2615,7 +2632,7 @@ function modalColaborador(m, e = null) {
       <label class="campo chk"><input type="checkbox" name="activo" ${v.activo ? 'checked' : ''} ${ro}> Activo</label>
       <label class="campo ancho">Notas<textarea name="notas" rows="2" ${ro}>${esc(v.notas || '')}</textarea></label>
     </div>
-    ${e ? `<p style="margin:12px 0 0"><a href="#vacaciones" data-cerrar>Ver vacaciones</a></p>` : ''}`,
+    ${e ? `<p style="margin:12px 0 0"><a href="#vacaciones" onclick="document.getElementById('modal').close()">Ver vacaciones</a>${e.activo ? ` · <a href="#liquidacion/${e.id}" onclick="document.getElementById('modal').close()">Calcular liquidación</a>` : ''}</p>` : ''}`,
   async d => {
     if (!ed) return;
     const f = new FormData($('form', d)), g = k => String(f.get(k) ?? '').trim() || null;
@@ -2639,13 +2656,13 @@ async function vPlanillas(m, arg) {
   const lista = await q(sb.from('planillas').select('*').order('desde', { ascending: false }).order('id', { ascending: false }).limit(200));
   const ed = puede('planilla.editar');
   m.innerHTML = `
-    <div class="cabecera"><div><h1>Planillas</h1><p>Cálculo de INSS, IR e INATEC, aprobación por otra persona, colillas y asiento automático</p></div>
-      <div class="acciones">${ed ? '<button class="btn" id="b-nueva">+ Nueva planilla</button>' : ''}</div></div>
+    <div class="cabecera"><div><h1>Planillas</h1><p>Quincenas, aguinaldo y liquidaciones: INSS, IR e INATEC, aprobación por otra persona, pago y asiento automático</p></div>
+      <div class="acciones">${puede('planilla.ver') ? '<a class="btn sec" href="#liquidacion">Calcular liquidación</a>' : ''}${ed ? '<button class="btn" id="b-nueva">+ Nueva planilla</button>' : ''}</div></div>
     <div class="tarjeta"><div class="envoltura">${lista.length ? `<table>
       <thead><tr><th>Período</th><th>Descripción</th><th>Tipo</th><th class="num">Colaboradores</th><th class="num">Bruto</th><th class="num">Neto a pagar</th><th>Estado</th><th>Elaboró</th></tr></thead>
       <tbody>${lista.map(p => `<tr class="clic" onclick="location.hash='planilla/${p.id}'"><td><b>${fecha(p.desde)} – ${fecha(p.hasta)}</b></td><td>${esc(p.descripcion)}</td>
-        <td>${p.tipo === 'mensual' ? 'Mensual' : 'Quincenal'}</td><td class="num">${p.empleados}</td><td class="num">${fmt(p.total_bruto)}</td><td class="num"><b>${fmt(p.total_neto)}</b></td>
-        <td><span class="etiqueta e-${p.estado}">${ESTADOS_PLANILLA[p.estado]}</span>${p.estado === 'borrador' && p.motivo_devolucion ? ' <span class="etiqueta e-anulado" title="' + esc(p.motivo_devolucion) + '">Devuelta</span>' : ''}</td>
+        <td>${TIPOS_PL[p.tipo]}</td><td class="num">${p.empleados}</td><td class="num">${fmt(p.total_bruto)}</td><td class="num"><b>${fmt(p.total_neto)}</b></td>
+        <td><span class="etiqueta e-${p.estado}">${ESTADOS_PLANILLA[p.estado]}</span>${p.pagada_en ? ' <span class="etiqueta e-aprobado">Pagada</span>' : (p.estado === 'aprobada' ? ' <span class="etiqueta e-pendiente">Por pagar</span>' : '')}${p.estado === 'borrador' && p.motivo_devolucion ? ' <span class="etiqueta e-anulado" title="' + esc(p.motivo_devolucion) + '">Devuelta</span>' : ''}</td>
         <td class="muted">${esc(nombrePerfil(p.creado_por))}</td></tr>`).join('')}</tbody></table>`
       : '<div class="vacio"><span class="ilus">🧾</span>Aún no hay planillas. Complete los salarios en Colaboradores y cree la primera.</div>'}</div></div>`;
   if ($('#b-nueva')) $('#b-nueva').onclick = () => modalNuevaPlanilla();
@@ -2656,19 +2673,23 @@ function modalNuevaPlanilla() {
   const dlg = abrirModal(`<h2>Nueva planilla</h2>
     <p class="muted" style="font-size:13px;margin:0 0 10px">Entran los colaboradores activos con ese tipo de pago y salario registrado. Después puede agregar o quitar.</p>
     <div class="rejilla">
-      <label class="campo">Tipo<select name="tipo"><option value="quincenal">Quincenal</option><option value="mensual">Mensual</option></select></label>
+      <label class="campo">Tipo<select name="tipo"><option value="quincenal">Quincenal</option><option value="mensual">Mensual</option><option value="aguinaldo">Aguinaldo (décimo tercer mes)</option></select></label>
       <label class="campo">Desde<input type="date" name="desde" value="${d}" required></label>
       <label class="campo">Hasta<input type="date" name="hasta" value="${h}" required></label>
       <label class="campo">Fecha de pago<input type="date" name="fecha_pago" value="${h}"></label>
       <label class="campo ancho">Descripción (opcional)<input name="descripcion" placeholder="Planilla quincenal del …"></label>
-    </div>`, async dl => {
+    </div>
+    <div class="aviso" id="nota-agui" hidden style="margin:10px 0 0">Aguinaldo: del 1 de diciembre al 30 de noviembre, un mes de salario por año trabajado y proporcional por días (año de 360 días).
+      Entran todos los colaboradores activos. No lleva INSS, INATEC ni IR. Se paga a más tardar el 10 de diciembre.</div>`, async dl => {
       const p = Object.fromEntries(new FormData($('form', dl)));
       const id = await q(sb.rpc('guardar_planilla', { p }));
       avisar('Planilla creada y calculada'); location.hash = 'planilla/' + id;
     }, { textoGuardar: 'Crear y calcular' });
   $('[name=tipo]', dlg).onchange = ev => {
     const [y, mo] = $('[name=desde]', dlg).value.split('-'), ult = new Date(Number(y), Number(mo), 0).getDate();
-    if (ev.target.value === 'mensual') { $('[name=desde]', dlg).value = `${y}-${mo}-01`; $('[name=hasta]', dlg).value = `${y}-${mo}-${ult}`; $('[name=fecha_pago]', dlg).value = `${y}-${mo}-${ult}`; }
+    $('#nota-agui', dlg).hidden = ev.target.value !== 'aguinaldo';
+    if (ev.target.value === 'aguinaldo') { const ya = hoy().slice(0, 4); $('[name=desde]', dlg).value = `${ya - 1}-12-01`; $('[name=hasta]', dlg).value = `${ya}-11-30`; $('[name=fecha_pago]', dlg).value = `${ya}-12-10`; }
+    else if (ev.target.value === 'mensual') { $('[name=desde]', dlg).value = `${y}-${mo}-01`; $('[name=hasta]', dlg).value = `${y}-${mo}-${ult}`; $('[name=fecha_pago]', dlg).value = `${y}-${mo}-${ult}`; }
     else { const [a, b] = siguienteQuincena(); $('[name=desde]', dlg).value = a; $('[name=hasta]', dlg).value = b; $('[name=fecha_pago]', dlg).value = b; }
   };
 }
@@ -2692,17 +2713,24 @@ async function vPlanilla(m, arg) {
   const costo = Number(P.total_bruto) + Number(P.total_inss_patronal) + Number(P.total_inatec);
   m.innerHTML = `
     <div class="cabecera no-imprimir"><div><h1>${esc(P.descripcion)} <span class="etiqueta e-${P.estado}" style="vertical-align:middle;font-size:13px">${ESTADOS_PLANILLA[P.estado]}</span></h1>
-      <p><a href="#planillas">← Volver a planillas</a> · ${P.tipo === 'mensual' ? 'Mensual' : 'Quincenal'} del ${fecha(P.desde)} al ${fecha(P.hasta)} · pago el ${fecha(P.fecha_pago)}</p></div>
+      <p><a href="#planillas">← Volver a planillas</a> · ${TIPOS_PL[P.tipo]} del ${fecha(P.desde)} al ${fecha(P.hasta)} · pago el ${fecha(P.fecha_pago)}</p></div>
       <div class="acciones">
-        ${editable ? '<button class="btn sec" id="b-agregar">+ Colaborador</button><button class="btn sec" id="b-recalc">Recalcular</button><button class="btn peligro" id="b-eliminar">Eliminar</button><button class="btn" id="b-enviar">Enviar a aprobación →</button>' : ''}
+        ${editable ? (P.tipo === 'liquidacion' ? '' : '<button class="btn sec" id="b-agregar">+ Colaborador</button>') + '<button class="btn sec" id="b-recalc">Recalcular</button><button class="btn peligro" id="b-eliminar">Eliminar</button><button class="btn" id="b-enviar">Enviar a aprobación →</button>' : ''}
         ${puedeAprobar ? '<button class="btn" id="b-aprobar">✓ Aprobar</button><button class="btn peligro" id="b-devolver">Devolver</button>' : ''}
         ${P.estado === 'por_aprobar' && P.creado_por === yo.id && puede('planilla.editar') ? '<button class="btn sec" id="b-retirar">Retirar para corregir</button>' : ''}
-        ${P.estado === 'aprobada' ? '<button class="btn" id="b-colillas">🖨 Colillas</button><button class="btn sec" id="b-pago">Archivo de pago</button>' : ''}
+        ${P.estado === 'aprobada' && !P.pagada_en && puede('planilla.aprobar') ? '<button class="btn" id="b-pagar">💳 Pagar planilla</button>' : ''}
+        ${P.estado === 'aprobada' && P.pagada_en && puede('planilla.aprobar') ? '<button class="btn sec" id="b-reenviar">✉ Reenviar colillas</button>' : ''}
+        ${P.estado === 'aprobada' ? '<button class="btn sec" id="b-colillas">🖨 Colillas</button><button class="btn sec" id="b-pago">Archivo BANPRO</button>' : ''}
         <button class="btn sec" id="b-imprimir">Imprimir planilla</button><button class="btn sec" id="b-csv">CSV</button>
-        ${P.estado === 'aprobada' && puede('planilla.aprobar') ? '<button class="btn peligro" id="b-anular">Anular</button>' : ''}
+        ${P.estado === 'aprobada' && P.pagada_en && puede('planilla.aprobar') ? '<button class="btn peligro" id="b-anular-pago">Anular pago</button>' : ''}
+        ${P.estado === 'aprobada' && !P.pagada_en && puede('planilla.aprobar') ? '<button class="btn peligro" id="b-anular">Anular</button>' : ''}
       </div></div>
     ${P.estado === 'borrador' && P.motivo_devolucion ? `<div class="aviso error">Devuelta por ${esc(nombrePerfil(P.devuelto_por))}: ${esc(P.motivo_devolucion)}</div>` : ''}
     ${P.estado === 'por_aprobar' && P.creado_por === yo.id ? '<div class="aviso">Usted elaboró esta planilla; otra persona con permiso de aprobación debe revisarla.</div>' : ''}
+    ${P.pagada_en ? `<div class="aviso" style="border-left-color:var(--azul)"><b>Pagada</b> el ${fecha(P.fecha_pagado)} desde ${esc(bancoPorId(P.cuenta_bancaria_id)?.nombre || 'la cuenta bancaria')}${P.referencia_pago ? ' · referencia ' + esc(P.referencia_pago) : ''}.
+      ${P.correos_en ? `Colillas enviadas por correo: <b>${P.correos_enviados}</b>${P.correos_error ? ` · <span class="dif-mal">${P.correos_error} con error</span>` : ''} (${fechaHora(P.correos_en)}).` : 'Las colillas aún no se han enviado por correo.'}</div>` : ''}
+    ${P.tipo === 'liquidacion' ? htmlDetalleLiquidacion(P, editable) : ''}
+    ${P.tipo === 'aguinaldo' ? '<div class="aviso">Aguinaldo del 1 de diciembre al 30 de noviembre: salario mensual ÷ 360 × días trabajados. Exento de IR (Ley 822, art. 19) y sin INSS ni INATEC. Los días sin goce lo reducen.</div>' : ''}
     ${P.estado === 'anulada' ? `<div class="aviso error">Anulada por ${esc(nombrePerfil(P.anulado_por))}: ${esc(P.motivo_anulacion)}</div>` : ''}
     <div class="kpis">
       <div class="kpi"><div class="et">Colaboradores</div><div class="val navy">${contar(P.empleados, 0)}</div></div>
@@ -2713,11 +2741,11 @@ async function vPlanilla(m, arg) {
     ${P.estado !== 'borrador' ? `<div class="tarjeta"><h2>Seguimiento</h2>${pasosPlanilla(P)}${P.asiento_id && puede('contabilidad.ver') ? `<p style="margin:8px 0 0"><a href="#asiento/${P.asiento_id}">Ver asiento contable</a>${P.asiento_anulacion_id ? ` · <a href="#asiento/${P.asiento_anulacion_id}">asiento de anulación</a>` : ''}</p>` : ''}</div>` : ''}
     <div class="tarjeta">
       <div class="envoltura"><table id="t-pl">
-        <thead><tr><th>Colaborador</th><th class="num">Días sin goce</th><th class="num">Días pagados</th><th class="num">Salario</th><th class="num">Otros ingresos</th><th class="num">INSS</th><th class="num">IR</th><th class="num">Otras deducc.</th><th class="num">Neto</th><th></th></tr></thead>
+        <thead><tr><th>Colaborador</th><th class="num">Días sin goce</th><th class="num">${P.tipo === 'aguinaldo' ? 'Días del período' : 'Días pagados'}</th><th class="num">${nombreSalario(P)}</th><th class="num">${P.tipo === 'liquidacion' ? 'Prestaciones' : 'Otros ingresos'}</th><th class="num">INSS</th><th class="num">IR</th><th class="num">Otras deducc.</th><th class="num">Neto</th><th></th></tr></thead>
         <tbody>${L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; const nn = nov(l.empleado_id); return `<tr data-l="${l.id}" data-e="${l.empleado_id}">
           <td><b>${esc(e.nombre || '¿?')}</b><br><span class="muted" style="font-size:12px">${esc(e.cargo || '')}${l.centro_costo_id ? ' · ' + esc(centroCod(l.centro_costo_id)) : ''} · ${fmt(l.salario_mensual)}/mes</span></td>
           <td class="num">${editable ? `<input class="monto dnp" style="width:60px" inputmode="decimal" value="${Number(l.dias_no_pagados) ? fmtQ(l.dias_no_pagados) : ''}" placeholder="0" title="Permisos sin goce, faltas o suspensiones">` : fmtZ(l.dias_no_pagados)}</td>
-          <td class="num">${fmtQ(diasPagados(l))}</td>
+          <td class="num">${fmtQ(diasPagados(l, P))}</td>
           <td class="num">${fmt(l.salario_periodo)}</td><td class="num">${fmtZ(l.ingresos)}</td><td class="num">${fmt(l.inss_laboral)}</td><td class="num">${fmtZ(l.ir)}</td><td class="num">${fmtZ(l.deducciones)}</td>
           <td class="num"><b class="${Number(l.neto) < 0 ? 'dif-mal' : ''}">${fmt(l.neto)}</b></td>
           <td style="white-space:nowrap"><button class="btn sec chico" data-nov title="Bonos, viáticos, préstamos y otras deducciones">${nn.length ? `Novedades (${nn.length})` : (editable ? '+ Novedad' : '')}</button>${editable ? ' <button class="btn sec chico" data-quitar title="Quitar de esta planilla">✕</button>' : ''}</td></tr>`; }).join('')}
@@ -2735,6 +2763,8 @@ async function vPlanilla(m, arg) {
   });
   $$('#t-pl [data-quitar]').forEach(b => b.onclick = () => { const tr = b.closest('tr'); if (confirm(`¿Quitar a ${empleadoPorId(tr.dataset.e)?.nombre} de esta planilla?`)) rpc('quitar_empleado_planilla', { p_linea: Number(tr.dataset.l) }, 'Colaborador quitado'); });
   $$('#t-pl [data-nov]').forEach(b => b.onclick = () => modalNovedades(P, Number(b.closest('tr').dataset.e), nov(Number(b.closest('tr').dataset.e)), C, editable));
+  if ($('#f-liq')) $('#f-liq').onchange = () => rpc('editar_liquidacion', { p_id: P.id, p_motivo: $('#f-liq [name=motivo]').value, p_indemnizar: $('#f-liq [name=indem]').checked }, 'Liquidación recalculada');
+  if ($('#f-liq')) $('#f-liq [name=motivo]').addEventListener('change', ev => { $('#f-liq [name=indem]').checked = MOTIVOS_INDEMNIZA.includes(ev.target.value); }, true);
   if ($('#b-recalc')) $('#b-recalc').onclick = () => rpc('recalcular_planilla', { p_id: P.id }, 'Planilla recalculada');
   if ($('#b-enviar')) $('#b-enviar').onclick = () => rpc('enviar_planilla', { p_id: P.id }, 'Planilla enviada a aprobación');
   if ($('#b-retirar')) $('#b-retirar').onclick = () => rpc('retirar_planilla', { p_id: P.id }, 'Planilla retirada de aprobación');
@@ -2746,7 +2776,9 @@ async function vPlanilla(m, arg) {
   };
   if ($('#b-aprobar')) $('#b-aprobar').onclick = () => abrirModal(`<h2>Aprobar planilla</h2><p>${esc(P.descripcion)}</p>
       <p>Neto a pagar: <b>C$ ${fmt(P.total_neto)}</b> a ${P.empleados} colaboradores. Costo total: <b>C$ ${fmt(costo)}</b>.</p>
-      <p class="muted">Se registra el asiento contable y se acumulan las vacaciones del período.</p>`,
+      <p class="muted">${P.tipo === 'aguinaldo' ? 'Se registra el asiento contable (gasto de prestaciones contra salarios por pagar).'
+        : P.tipo === 'liquidacion' ? 'Se registra el asiento contable, se pagan las vacaciones pendientes y el colaborador queda inactivo desde el ' + fecha(P.hasta) + '.'
+        : 'Se registra el asiento contable y se acumulan las vacaciones del período.'}</p>`,
     async () => { await q(sb.rpc('aprobar_planilla', { p_id: P.id })); avisar('Planilla aprobada y contabilizada'); actualizarInsignias(); mostrar(); }, { textoGuardar: 'Aprobar' });
   if ($('#b-devolver')) $('#b-devolver').onclick = () => abrirModal(`<h2>Devolver planilla para corregir</h2><label class="campo">Motivo<textarea name="motivo" rows="3" required></textarea></label>`,
     async d => { await q(sb.rpc('devolver_planilla', { p_id: P.id, p_motivo: $('[name=motivo]', d).value })); avisar('Planilla devuelta'); actualizarInsignias(); mostrar(); }, { textoGuardar: 'Devolver' });
@@ -2754,19 +2786,77 @@ async function vPlanilla(m, arg) {
       <div class="rejilla"><label class="campo">Fecha<input type="date" name="f" min="${P.hasta}" value="${hoy() < P.hasta ? P.hasta : hoy()}"></label><label class="campo ancho">Motivo<textarea name="motivo" rows="3" required></textarea></label></div>`,
     async d => { await q(sb.rpc('anular_planilla', { p_id: P.id, p_motivo: $('[name=motivo]', d).value, p_fecha: $('[name=f]', d).value })); avisar('Planilla anulada'); mostrar(); }, { textoGuardar: 'Anular planilla' });
   const filasCsv = () => [['Colaborador', 'Cedula', 'INSS', 'Cargo', 'Centro', 'Salario mensual', 'Dias pagados', 'Salario', 'Otros ingresos', 'Bruto', 'INSS laboral', 'IR', 'Otras deducciones', 'Neto', 'INSS patronal', 'INATEC'],
-    ...L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; return [e.nombre, e.cedula, e.inss_numero, e.cargo, centroCod(l.centro_costo_id), l.salario_mensual, diasPagados(l), l.salario_periodo, l.ingresos, l.bruto, l.inss_laboral, l.ir, l.deducciones, l.neto, l.inss_patronal, l.inatec]; })];
+    ...L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; return [e.nombre, e.cedula, e.inss_numero, e.cargo, centroCod(l.centro_costo_id), l.salario_mensual, diasPagados(l, P), l.salario_periodo, l.ingresos, l.bruto, l.inss_laboral, l.ir, l.deducciones, l.neto, l.inss_patronal, l.inatec]; })];
   $('#b-csv').onclick = () => csv(`planilla_${P.desde}_${P.hasta}.csv`, filasCsv());
   $('#b-imprimir').onclick = () => imprimirHTML(htmlPlanilla(P, L), 'size: letter landscape; margin: 10mm');
   if ($('#b-colillas')) $('#b-colillas').onclick = () => imprimirHTML(htmlColillas(P, L, N, C, sal), 'size: letter; margin: 8mm');
-  if ($('#b-pago')) $('#b-pago').onclick = () => {
-    const sinCta = L.filter(l => !empleadoPorId(l.empleado_id)?.cuenta_banco);
-    if (sinCta.length) avisar(`${sinCta.length} colaborador(es) sin cuenta BANPRO: ${sinCta.map(l => empleadoPorId(l.empleado_id)?.nombre).join(', ')}`, 'error');
-    csv(`pago_planilla_${P.fecha_pago}.csv`, [['Cuenta', 'Nombre', 'Cedula', 'Monto', 'Referencia'],
+  const sinCuenta = () => L.filter(l => Number(l.neto) > 0 && !empleadoPorId(l.empleado_id)?.cuenta_banco);
+  const archivoBanpro = () => {
+    const sc = sinCuenta();
+    if (sc.length) avisar(`${sc.length} colaborador(es) sin cuenta BANPRO: ${sc.map(l => empleadoPorId(l.empleado_id)?.nombre).join(', ')}`, 'error');
+    // Formato provisional: se ajusta cuando BANPRO entregue la plantilla de Plan Nómina
+    csv(`planilla_banpro_${P.desde}_${P.hasta}.csv`, [['Cuenta', 'Nombre', 'Cedula', 'Monto', 'Referencia'],
       ...L.filter(l => Number(l.neto) > 0).map(l => { const e = empleadoPorId(l.empleado_id) || {}; return [e.cuenta_banco || '', e.nombre, e.cedula || '', Number(l.neto).toFixed(2), `PL-${P.id}`]; })]);
   };
+  if ($('#b-pago')) $('#b-pago').onclick = archivoBanpro;
+  if ($('#b-pagar')) $('#b-pagar').onclick = async () => {
+    await cargarCatalogos();
+    const ctas = cache.bancos.filter(b => b.activa && b.moneda === 'NIO');
+    const sc = sinCuenta();
+    const d = abrirModal(`<h2>Pagar planilla</h2>
+      <p style="margin:0 0 6px"><b>${esc(P.descripcion)}</b> · neto a depositar <b>C$ ${fmt(P.total_neto)}</b> a ${L.filter(l => Number(l.neto) > 0).length} colaboradores.</p>
+      <div class="tarjeta" style="margin:10px 0;padding:12px 14px">
+        <b>1. Depósito en BANPRO</b>
+        <p class="muted" style="font-size:13px;margin:4px 0 8px">Descargue el archivo, súbalo en Banpro en Línea → Planillas (Plan Nómina) y apruébelo con su token.</p>
+        ${sc.length ? `<div class="aviso error" style="margin:0 0 8px">Sin cuenta BANPRO: ${sc.map(l => esc(empleadoPorId(l.empleado_id)?.nombre)).join(', ')}. Complételas en Colaboradores o págueles aparte.</div>` : ''}
+        <button type="button" class="btn sec chico" id="m-archivo">⬇ Descargar archivo BANPRO</button>
+      </div>
+      <b>2. Cuando el banco confirme el depósito</b>
+      <div class="rejilla" style="margin-top:8px">
+        <label class="campo">Cuenta de donde salió<select name="cb">${ctas.map(b => `<option value="${b.id}">${esc(b.nombre)}${b.numero_cuenta ? ' · ' + esc(b.numero_cuenta) : ''}</option>`).join('')}</select></label>
+        <label class="campo">Fecha del depósito<input type="date" name="f" value="${hoy()}" min="${P.desde}" required></label>
+        <label class="campo ancho">Referencia o número de lote del banco<input name="ref" placeholder="Ej.: número de operación de Banpro en Línea"></label>
+        <label class="campo chk ancho"><input type="checkbox" name="mail" checked> Enviar a cada colaborador su colilla por correo</label>
+      </div>
+      <p class="muted" style="font-size:12.5px;margin:6px 0 0">Al confirmar se registra el asiento (Salarios por pagar contra el banco). Confirme solo cuando el banco ya haya depositado.</p>`,
+      async dl => {
+        if (!ctas.length) { avisar('No hay una cuenta bancaria activa en córdobas', 'error'); return false; }
+        const enviar = $('[name=mail]', dl).checked;
+        const tok = await q(sb.rpc('pagar_planilla', { p_id: P.id, p_cuenta_bancaria: Number($('[name=cb]', dl).value), p_fecha: $('[name=f]', dl).value,
+          p_referencia: $('[name=ref]', dl).value, p_enviar_correos: enviar }));
+        avisar('Pago registrado y contabilizado');
+        if (tok) enviarColillas(P.id, tok);
+        actualizarInsignias(); mostrar();
+      }, { textoGuardar: 'Confirmar pago' });
+    $('#m-archivo', d).onclick = archivoBanpro;
+  };
+  if ($('#b-reenviar')) $('#b-reenviar').onclick = async () => {
+    if (!confirm('¿Enviar de nuevo la colilla por correo a todos los colaboradores de esta planilla?')) return;
+    try { enviarColillas(P.id, await q(sb.rpc('reenviar_colillas', { p_id: P.id }))); } catch (e) { fallo(e); }
+  };
+  if ($('#b-anular-pago')) $('#b-anular-pago').onclick = () => abrirModal(`<h2>Anular el pago</h2>
+      <p class="muted">Se revierte el asiento del depósito y la planilla vuelve a quedar por pagar. Úselo si el pago se registró por error o el banco lo rechazó.</p>
+      <label class="campo">Motivo<textarea name="motivo" rows="3" required></textarea></label>`,
+    async d => { await q(sb.rpc('anular_pago_planilla', { p_id: P.id, p_motivo: $('[name=motivo]', d).value })); avisar('Pago anulado'); mostrar(); }, { textoGuardar: 'Anular pago' });
+}
+
+// Pide a la app de marcaje que envíe las colillas (usa el correo de Microsoft 365 de la organización)
+async function enviarColillas(id, token) {
+  avisar('Enviando las colillas por correo… puede tardar un par de minutos');
+  try {
+    const r = await fetch(CONFIG.marcajeApi, { method: 'POST', redirect: 'follow', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ fn: 'enviarColillas', args: [id, token] }) }).then(x => x.json());
+    if (!r.ok) throw new Error(r.error || 'La app de marcaje no pudo enviar los correos');
+    const d = r.data || {};
+    avisar(`Colillas enviadas: ${d.enviados || 0}${d.errores ? ` · ${d.errores} con error` : ''}${d.sin_correo ? ` · ${d.sin_correo} sin correo` : ''}`, d.errores ? 'error' : undefined);
+  } catch (e) {
+    avisar('No se pudieron enviar las colillas: ' + e.message + '. Puede reintentar con "Reenviar colillas".', 'error');
+  }
+  if (location.hash.startsWith('#planilla/')) mostrar();
 }
 function pasosPlanilla(p) {
   const pasos = [['Elaborada', p.creado_en, p.creado_por], ['Enviada', p.enviado_en], ['Aprobada', p.aprobado_en, p.aprobado_por]];
+  if (p.estado !== 'anulada') pasos.push(['Pagada', p.pagada_en, p.pagado_por], ['Colillas enviadas', p.correos_en]);
   if (p.estado === 'anulada') pasos.push(['Anulada', p.anulado_en, p.anulado_por]);
   return `<div style="display:flex;flex-wrap:wrap;margin:6px 0 4px">${pasos.map(([t, f, u], i) => `
     <div style="flex:1;min-width:110px;text-align:center;opacity:${f ? 1 : .45}">
@@ -2781,9 +2871,9 @@ function modalNovedades(P, eid, lista, C, editable) {
     <p class="muted" style="font-size:13px;margin:0 0 10px">Ingresos (bonos, viáticos) y deducciones (préstamos, adelantos, embargos) de este período. No hay horas extra: los días extra se compensan en vacaciones.</p>
     ${lista.length ? `<table><thead><tr><th>Concepto</th><th>Descripción</th><th class="num">Monto</th><th></th></tr></thead><tbody>
       ${lista.map(n => `<tr><td>${esc(conc(n.concepto_id)?.nombre)} <span class="etiqueta ${conc(n.concepto_id)?.tipo === 'ingreso' ? 'e-aprobado' : 'e-anulado'}">${conc(n.concepto_id)?.tipo === 'ingreso' ? 'Ingreso' : 'Deducción'}</span></td>
-        <td>${esc(n.descripcion || '')}</td><td class="num">${fmt(n.monto)}</td><td>${editable ? `<button type="button" class="btn sec chico" data-borrar="${n.id}">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Sin novedades.</p>'}
+        <td>${esc(n.descripcion || '')}</td><td class="num">${fmt(n.monto)}</td><td>${editable && !n.automatica ? `<button type="button" class="btn sec chico" data-borrar="${n.id}">✕</button>` : n.automatica ? '<span class="muted" style="font-size:12px">Calculado</span>' : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Sin novedades.</p>'}
     ${editable ? `<h3 style="margin-top:14px">Agregar</h3><div class="rejilla">
-      <label class="campo">Concepto<select name="concepto_id">${C.filter(c => c.activo).map(c => `<option value="${c.id}">${c.tipo === 'ingreso' ? '＋' : '－'} ${esc(c.nombre)}</option>`).join('')}</select></label>
+      <label class="campo">Concepto<select name="concepto_id">${C.filter(c => c.activo && !c.sistema).map(c => `<option value="${c.id}">${c.tipo === 'ingreso' ? '＋' : '－'} ${esc(c.nombre)}</option>`).join('')}</select></label>
       <label class="campo">Monto (C$)<input name="monto" class="monto" inputmode="decimal"></label>
       <label class="campo ancho">Descripción<input name="descripcion" placeholder="Ej.: cuota 3 de 10"></label></div>` : ''}`,
     async dl => {
@@ -2805,7 +2895,7 @@ function htmlPlanilla(P, L) {
       <div>Del ${fecha(P.desde)} al ${fecha(P.hasta)} · ${ESTADOS_PLANILLA[P.estado]}</div></div></div>
     <table style="width:100%;border-collapse:collapse"><thead><tr><th ${th}>Colaborador</th><th ${th}>Cédula</th><th ${th}>INSS</th><th ${thr}>Días</th><th ${thr}>Salario</th><th ${thr}>Otros ingr.</th><th ${thr}>Bruto</th>
       <th ${thr}>INSS lab.</th><th ${thr}>IR</th><th ${thr}>Otras ded.</th><th ${thr}>Neto</th><th ${thr}>INSS pat.</th><th ${thr}>INATEC</th><th ${th}>Firma</th></tr></thead>
-    <tbody>${L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; return `<tr><td ${td}>${esc(e.nombre)}</td><td ${td}>${esc(e.cedula || '')}</td><td ${td}>${esc(e.inss_numero || '')}</td><td ${tdr}>${fmtQ(diasPagados(l))}</td>
+    <tbody>${L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; return `<tr><td ${td}>${esc(e.nombre)}</td><td ${td}>${esc(e.cedula || '')}</td><td ${td}>${esc(e.inss_numero || '')}</td><td ${tdr}>${fmtQ(diasPagados(l, P))}</td>
       <td ${tdr}>${fmt(l.salario_periodo)}</td><td ${tdr}>${fmtZ(l.ingresos)}</td><td ${tdr}>${fmt(l.bruto)}</td><td ${tdr}>${fmt(l.inss_laboral)}</td><td ${tdr}>${fmtZ(l.ir)}</td><td ${tdr}>${fmtZ(l.deducciones)}</td>
       <td ${tdr}><b>${fmt(l.neto)}</b></td><td ${tdr}>${fmt(l.inss_patronal)}</td><td ${tdr}>${fmt(l.inatec)}</td><td ${td} style="width:70px"></td></tr>`; }).join('')}</tbody>
     <tfoot><tr style="font-weight:700"><td ${td} colspan="4">Totales (${L.length})</td>${['salario_periodo', 'ingresos', 'bruto', 'inss_laboral', 'ir', 'deducciones', 'neto', 'inss_patronal', 'inatec'].map(k => `<td ${tdr}>${fmt(s(k))}</td>`).join('')}<td ${td}></td></tr></tfoot></table>
@@ -2816,13 +2906,13 @@ function htmlColillas(P, L, N, C, sal) {
   const conc = id => C.find(c => c.id === id);
   const una = l => {
     const e = empleadoPorId(l.empleado_id) || {}, nn = N.filter(n => n.empleado_id === l.empleado_id);
-    const ing = [[`Salario (${fmtQ(diasPagados(l))} días)`, l.salario_periodo], ...nn.filter(n => conc(n.concepto_id)?.tipo === 'ingreso').map(n => [conc(n.concepto_id).nombre + (n.descripcion ? ' · ' + n.descripcion : ''), n.monto])];
+    const ing = [[`${nombreSalario(P)} (${fmtQ(diasPagados(l, P))} días)`, l.salario_periodo], ...nn.filter(n => conc(n.concepto_id)?.tipo === 'ingreso').map(n => [conc(n.concepto_id).nombre + (n.descripcion ? ' · ' + n.descripcion : ''), n.monto])];
     const ded = [['INSS laboral', l.inss_laboral], ['IR', l.ir], ...nn.filter(n => conc(n.concepto_id)?.tipo === 'deduccion').map(n => [conc(n.concepto_id).nombre + (n.descripcion ? ' · ' + n.descripcion : ''), n.monto])].filter(x => Number(x[1]));
     const fila = ([t, v]) => `<tr><td style="padding:2px 0">${esc(t)}</td><td style="text-align:right">${fmt(v)}</td></tr>`;
     const sv = sal.find(s => Number(s.empleado_id) === l.empleado_id);
     return `<div style="border:1px solid #999;border-radius:6px;padding:10px 14px;margin-bottom:8mm;page-break-inside:avoid;font-family:Raleway,Arial,sans-serif;font-size:9pt;color:#222">
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #00758F;padding-bottom:5px">
-        <img src="logo.png" style="height:30px"><div style="text-align:right"><b style="color:#0A2240;font-size:11pt">COLILLA DE PAGO</b><br>${esc(P.descripcion)}</div></div>
+        <img src="logo.png" style="height:30px"><div style="text-align:right"><b style="color:#0A2240;font-size:11pt">${P.tipo === 'liquidacion' ? 'LIQUIDACIÓN FINAL' : P.tipo === 'aguinaldo' ? 'AGUINALDO' : 'COLILLA DE PAGO'}</b><br>${esc(P.descripcion)}</div></div>
       <table style="width:100%;margin:6px 0;font-size:9pt"><tr><td><b>${esc(e.nombre)}</b> · ${esc(e.cargo || '')}</td><td style="text-align:right">Cédula ${esc(e.cedula || '—')} · INSS ${esc(e.inss_numero || '—')}</td></tr>
         <tr><td>Del ${fecha(P.desde)} al ${fecha(P.hasta)} · pago el ${fecha(P.fecha_pago)}</td><td style="text-align:right">Salario mensual C$ ${fmt(l.salario_mensual)}</td></tr></table>
       <div style="display:flex;gap:18px">
@@ -2838,6 +2928,277 @@ function htmlColillas(P, L, N, C, sal) {
     </div>`;
   };
   return `<div>${L.map(una).join('')}</div>`;
+}
+
+// ---------- Liquidaciones ----------
+function htmlDetalleLiquidacion(P, editable) {
+  const d = P.liq_detalle || {}, e = empleadoPorId(P.liq_empleado_id) || {};
+  return `<div class="tarjeta"><h2>Liquidación de ${esc(e.nombre || '')}</h2>
+    <div class="rejilla" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+      <div><span class="muted">Ingreso → salida</span><br><b>${fecha(d.fecha_ingreso)} → ${fecha(d.fecha_salida)}</b> (${fmtQ(d.anios)} años)</div>
+      <div><span class="muted">Vacaciones a pagar</span><br><b>${fmtQ(d.dias_vacaciones)} días</b> <span class="muted">(saldo ${fmtQ(d.saldo_vacaciones)} + ${fmtQ(d.vacaciones_periodo)} del período)</span>${Number(d.vacaciones_negativas) ? `<br><span class="dif-mal">Tenía ${fmtQ(-d.vacaciones_negativas)} días adelantados: descuéntelos como deducción si corresponde</span>` : ''}</div>
+      <div><span class="muted">Aguinaldo proporcional</span><br><b>${fmtQ(d.dias_aguinaldo)} días</b> desde el ${fecha(d.inicio_aguinaldo)}</div>
+      <div><span class="muted">Indemnización (art. 45)</span><br><b>${P.liq_indemnizar ? fmtQ(d.dias_indemnizacion) + ' días' : 'No corresponde'}</b></div>
+    </div>
+    ${editable ? `<form id="f-liq" class="filtros" style="margin-top:12px" onsubmit="return false">
+      <label class="campo" style="min-width:260px">Motivo de salida<select name="motivo">${Object.entries(MOTIVOS_SALIDA).map(([k, v]) => `<option value="${k}" ${P.liq_motivo === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="campo chk"><input type="checkbox" name="indem" ${P.liq_indemnizar ? 'checked' : ''}> Pagar indemnización por antigüedad</label></form>`
+      : `<p class="muted" style="margin:10px 0 0">Motivo: ${esc(MOTIVOS_SALIDA[P.liq_motivo] || '')}</p>`}
+    <p class="muted" style="font-size:12.5px;margin:10px 0 0">Para descontar préstamos, adelantos u otras deudas use "Novedades". El IR se calcula como un mes sobre salario y vacaciones; si la persona tuvo otros ingresos en el año, que el contador lo revise.</p></div>`;
+}
+function ultimoDiaPagado(salida, tipo) {
+  const [y, mo, d] = salida.split('-').map(Number), p = n => String(n).padStart(2, '0');
+  if (tipo !== 'mensual' && d > 15) return `${y}-${p(mo)}-15`;
+  const u = new Date(y, mo - 1, 0); return `${u.getFullYear()}-${p(u.getMonth() + 1)}-${p(u.getDate())}`;
+}
+async function vLiquidacion(m, arg) {
+  await cargarCatalogos(); await cargarEmpleados();
+  const activos = cache.empleados.filter(e => e.activo);
+  const e0 = empleadoPorId(arg) || activos[0];
+  const ed = puede('planilla.editar');
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Calcular liquidación</h1><p><a href="#planillas">← Planillas</a> · Lo que le corresponde a un colaborador que deja de trabajar (Código del Trabajo)</p></div>
+      <div class="acciones"><button class="btn sec" id="b-imp">Imprimir cálculo</button>${ed ? '<button class="btn" id="b-crear">Crear liquidación para aprobar →</button>' : ''}</div></div>
+    <div class="graficos" style="grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)">
+      <div class="tarjeta"><h2>Datos de la salida</h2><form id="f-sim" onsubmit="return false"><div class="rejilla" style="grid-template-columns:1fr">
+        <label class="campo">Colaborador<select name="emp">${activos.map(e => `<option value="${e.id}" ${e.id === e0?.id ? 'selected' : ''}>${esc(e.nombre)}${e.cargo ? ' · ' + esc(e.cargo) : ''}</option>`).join('')}</select></label>
+        <label class="campo">Último día trabajado (salida)<input type="date" name="salida" value="${hoy()}"></label>
+        <label class="campo">Pagado en planilla hasta el<input type="date" name="ultimo" value="${ultimoDiaPagado(hoy(), e0?.tipo_pago)}"></label>
+        <label class="campo">Motivo<select name="motivo">${Object.entries(MOTIVOS_SALIDA).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+        <label class="campo chk"><input type="checkbox" name="indem" checked> Pagar indemnización por antigüedad (art. 45)</label>
+      </div></form>
+      <p class="muted" style="font-size:12.5px;margin:12px 0 0">Renuncia con preaviso y despido sin causa pagan antigüedad: un mes por cada uno de los tres primeros años y 20 días por cada año desde el cuarto, proporcional, hasta cinco meses (en despido sin causa, mínimo un mes). El despido con causa justa (art. 48) no la paga.</p></div>
+      <div class="tarjeta" id="res-liq"><div class="esq" style="height:280px"></div></div>
+    </div>`;
+  const f = $('#f-sim'), val = k => $(`[name=${k}]`, f);
+  let ultimo = null;
+  const calcular = async () => {
+    try {
+      const r = await q(sb.rpc('simular_liquidacion', { p_empleado: Number(val('emp').value), p_fecha_salida: val('salida').value, p_ultimo_dia_pagado: val('ultimo').value || null, p_motivo: val('motivo').value, p_indemnizar: val('indem').checked }));
+      ultimo = r;
+      const fila = (t, det, v, cls = '') => `<tr class="${cls}"><td>${t}${det ? `<br><span class="muted" style="font-size:12.5px">${det}</span>` : ''}</td><td class="num">${v === null ? '–' : fmt(v)}</td></tr>`;
+      $('#res-liq').innerHTML = `<h2>${esc(r.nombre)}</h2>
+        <p class="muted" style="margin:-6px 0 10px">Ingresó el ${fecha(r.fecha_ingreso)} · ${fmtQ(r.anios)} años · salario C$ ${fmt(r.salario_mensual)}</p>
+        <table id="t-liq"><tbody>
+          ${fila('Salario pendiente', `${fmtQ(r.dias_salario)} días`, r.salario)}
+          ${fila('Vacaciones no gozadas', `${fmtQ(r.dias_vacaciones)} días`, r.vacaciones)}
+          ${fila('Aguinaldo proporcional', `${fmtQ(r.dias_aguinaldo)} días desde el ${fecha(r.inicio_aguinaldo)}`, r.aguinaldo)}
+          ${fila('Indemnización por antigüedad', r.indemniza ? `${fmtQ(r.dias_indemnizacion)} días · exenta de IR` : 'No corresponde por el motivo', r.indemniza ? r.indemnizacion : null)}
+          ${fila('<b>Total devengado</b>', '', r.bruto, 'total')}
+          ${fila('INSS laboral', 'Sobre salario y vacaciones', -r.inss)}
+          ${fila('IR', 'Sobre salario y vacaciones', -r.ir)}
+          ${fila('<b>Neto a pagar</b>', 'Antes de descontar préstamos u otras deudas', r.neto, 'total')}
+        </tbody></table>`;
+    } catch (e) { $('#res-liq').innerHTML = `<div class="aviso error">${esc(mensajeError(e))}</div>`; ultimo = null; }
+  };
+  val('emp').onchange = () => { val('ultimo').value = ultimoDiaPagado(val('salida').value || hoy(), empleadoPorId(val('emp').value)?.tipo_pago); calcular(); };
+  val('salida').onchange = () => { if (val('salida').value) val('ultimo').value = ultimoDiaPagado(val('salida').value, empleadoPorId(val('emp').value)?.tipo_pago); calcular(); };
+  val('motivo').onchange = () => { val('indem').checked = MOTIVOS_INDEMNIZA.includes(val('motivo').value); calcular(); };
+  val('ultimo').onchange = calcular; val('indem').onchange = calcular;
+  $('#b-imp').onclick = () => ultimo && imprimirHTML(`<div style="font-family:Raleway,Arial,sans-serif;font-size:10pt;color:#222">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #00758F;padding-bottom:6px;margin-bottom:10px"><img src="logo.png" style="height:36px">
+      <div style="text-align:right"><b style="font-size:13pt;color:#0A2240">Cálculo de liquidación</b><br>${esc(ultimo.nombre)} · ${esc(MOTIVOS_SALIDA[val('motivo').value])}</div></div>
+      <p>Ingreso: ${fecha(ultimo.fecha_ingreso)} · Salida: ${fecha(val('salida').value)} · Antigüedad: ${fmtQ(ultimo.anios)} años · Salario mensual: C$ ${fmt(ultimo.salario_mensual)}</p>
+      ${$('#t-liq').outerHTML.replace('<table', '<table style="width:100%;border-collapse:collapse" border="0" cellpadding="4"')}
+      <p style="font-size:8.5pt;color:#666;margin-top:14px">Cálculo preliminar, sujeto a deducciones por préstamos o adelantos. ${fechaHora(new Date())} · ${esc(ORGANIZACION)}</p></div>`, 'size: letter; margin: 15mm');
+  if ($('#b-crear')) $('#b-crear').onclick = async () => {
+    const e = empleadoPorId(val('emp').value);
+    if (!confirm(`¿Crear la liquidación de ${e?.nombre}? Quedará en borrador para revisión y aprobación.`)) return;
+    try {
+      const id = await q(sb.rpc('crear_liquidacion', { p: { empleado_id: Number(val('emp').value), fecha_salida: val('salida').value, ultimo_dia_pagado: val('ultimo').value || null, motivo: val('motivo').value, indemnizar: val('indem').checked } }));
+      avisar('Liquidación creada'); location.hash = 'planilla/' + id;
+    } catch (err) { fallo(err); }
+  };
+  if (!activos.length) { $('#res-liq').innerHTML = '<div class="vacio">No hay colaboradores activos.</div>'; return; }
+  calcular();
+}
+
+// ---------- Activos fijos ----------
+let filtroAct = { texto: '', categoria: '', estado: 'activo', tab: 'activos' };
+const TIPOS_BAJA = { venta: 'Venta', descarte: 'Descarte (dañado u obsoleto)', robo: 'Robo o pérdida', donacion: 'Donación a terceros' };
+async function cargarActivos() {
+  const [cats, acts, res] = await Promise.all([
+    q(sb.from('activos_categorias').select('*').order('nombre')),
+    q(sb.from('activos_fijos').select('*').order('codigo')),
+    q(sb.rpc('resumen_activos'))
+  ]);
+  const r = Object.fromEntries(res.map(x => [Number(x.activo_id), x]));
+  acts.forEach(a => Object.assign(a, { acumulada: Number(r[a.id]?.dep_acumulada || 0), libros: Number(r[a.id]?.valor_libros || 0), cuota: Number(r[a.id]?.cuota_mensual || 0), restantes: r[a.id]?.meses_restantes }));
+  cache.activosCat = cats;
+  return acts;
+}
+async function vActivos(m) {
+  await cargarCatalogos();
+  const acts = await cargarActivos(), cats = cache.activosCat, ed = puede('activos.editar'), f = filtroAct, t = f.texto.toLowerCase();
+  const catN = id => cats.find(c => c.id === Number(id))?.nombre || '';
+  const vivos = acts.filter(a => a.estado === 'activo');
+  const filas = acts.filter(a => (!f.estado || a.estado === f.estado) && (!f.categoria || a.categoria_id === Number(f.categoria))
+    && (!t || [a.codigo, a.nombre, a.marca, a.serie, a.ubicacion, a.responsable].join(' ').toLowerCase().includes(t)));
+  const s = k => vivos.reduce((x, a) => x + Number(a[k]), 0);
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Activos fijos</h1><p>Registro de bienes, depreciación en línea recta y bajas</p></div>
+      <div class="acciones">${ed ? '<button class="btn" id="b-nuevo">+ Activo</button>' : ''}<a class="btn sec" href="#depreciacion">Depreciación mensual</a><button class="btn sec" id="b-csv">CSV</button></div></div>
+    <div class="kpis">
+      <div class="kpi"><div class="et">Activos en uso</div><div class="val navy">${contar(vivos.length, 0)}</div></div>
+      <div class="kpi"><div class="et">Costo</div><div class="val">C$ ${contar(s('costo'))}</div></div>
+      <div class="kpi"><div class="et">Depreciación acumulada</div><div class="val">C$ ${contar(s('acumulada'))}</div></div>
+      <div class="kpi"><div class="et">Valor en libros</div><div class="val navy">C$ ${contar(s('libros'))}</div><div class="det">Cuota mensual C$ ${fmt(vivos.filter(a => a.libros - Number(a.valor_residual) > 0.005).reduce((x, a) => x + Math.min(a.cuota, a.libros - Number(a.valor_residual)), 0))}</div></div>
+    </div>
+    <div class="pestanas"><a href="#" data-tab="activos" class="${f.tab === 'activos' ? 'activo' : ''}">Activos<span class="n">${acts.length}</span></a><a href="#" data-tab="categorias" class="${f.tab === 'categorias' ? 'activo' : ''}">Categorías y vida útil<span class="n">${cats.length}</span></a></div>
+    <div class="tarjeta">${f.tab === 'categorias' ? `
+      <p class="muted" style="margin:0 0 10px;font-size:13px">Vida útil sugerida del Reglamento de la Ley 822 (art. 34). Cada categoría define sus cuentas contables.</p>
+      <div class="envoltura"><table><thead><tr><th>Categoría</th><th class="num">Vida útil</th><th>Cuenta del activo</th><th>Depreciación acumulada</th><th>Gasto</th></tr></thead>
+      <tbody>${cats.map(c => `<tr class="${ed ? 'clic' : ''}" data-cat="${c.id}"><td><b>${esc(c.nombre)}</b>${c.activa ? '' : ' <span class="etiqueta e-anulado">Inactiva</span>'}</td><td class="num">${c.vida_util_meses % 12 ? c.vida_util_meses + ' meses' : c.vida_util_meses / 12 + ' años'}</td>
+        <td>${esc(etiquetaCuenta(cache.cuentas.find(x => x.id === c.cuenta_activo_id)))}</td><td>${esc(etiquetaCuenta(cache.cuentas.find(x => x.id === c.cuenta_dep_acum_id)))}</td><td>${esc(etiquetaCuenta(cache.cuentas.find(x => x.id === c.cuenta_gasto_id)))}</td></tr>`).join('')}</tbody></table></div>
+      ${ed ? '<button class="btn sec" id="b-cat" style="margin-top:12px">+ Categoría</button>' : ''}` : `
+      <form class="filtros" id="f-act">
+        <label class="campo" style="flex:1;min-width:200px">Buscar<input name="texto" value="${esc(f.texto)}" placeholder="Código, nombre, serie, ubicación o responsable"></label>
+        <label class="campo">Categoría<select name="categoria"><option value="">Todas</option>${cats.map(c => `<option value="${c.id}" ${Number(f.categoria) === c.id ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></label>
+        <label class="campo">Estado<select name="estado"><option value="activo" ${f.estado === 'activo' ? 'selected' : ''}>En uso</option><option value="baja" ${f.estado === 'baja' ? 'selected' : ''}>De baja</option><option value="" ${!f.estado ? 'selected' : ''}>Todos</option></select></label>
+        <button class="btn sec">Filtrar</button></form>
+      <div class="envoltura">${filas.length ? `<table><thead><tr><th>Código</th><th>Activo</th><th>Categoría</th><th>Ubicación</th><th>Adquirido</th><th class="num">Costo</th><th class="num">Acumulada</th><th class="num">En libros</th><th class="num">Cuota/mes</th><th></th></tr></thead>
+        <tbody>${filas.map(a => `<tr class="clic" data-id="${a.id}"><td><b>${esc(a.codigo)}</b></td><td>${esc(a.nombre)}${a.serie ? `<br><span class="muted" style="font-size:12px">Serie ${esc(a.serie)}</span>` : ''}</td><td>${esc(catN(a.categoria_id))}</td>
+          <td>${esc(a.ubicacion || '')}${a.responsable ? `<br><span class="muted" style="font-size:12px">${esc(a.responsable)}</span>` : ''}</td><td>${fecha(a.fecha_adquisicion)}</td>
+          <td class="num">${fmt(a.costo)}</td><td class="num">${fmt(a.acumulada)}</td><td class="num"><b>${fmt(a.libros)}</b></td><td class="num">${a.estado === 'activo' && a.restantes > 0 ? fmt(a.cuota) : '–'}</td>
+          <td>${a.estado === 'baja' ? `<span class="etiqueta e-anulado">${esc(TIPOS_BAJA[a.tipo_baja] || 'Baja')}</span>` : a.restantes > 0 ? '' : '<span class="etiqueta e-aprobado">Depreciado</span>'}</td></tr>`).join('')}</tbody></table>`
+        : `<div class="vacio"><span class="ilus">🏢</span>${acts.length ? 'No hay activos en esta vista.' : 'Aún no hay activos. Registre los bienes de AFC con su costo y fecha de compra.'}</div>`}</div>`}
+    </div>`;
+  $$('[data-tab]').forEach(a => a.onclick = ev => { ev.preventDefault(); filtroAct.tab = a.dataset.tab; vActivos(m); });
+  if ($('#f-act')) $('#f-act').onsubmit = ev => { ev.preventDefault(); Object.assign(filtroAct, Object.fromEntries(new FormData(ev.target))); vActivos(m); };
+  if ($('#b-nuevo')) $('#b-nuevo').onclick = () => modalActivo(m, null);
+  $$('tr[data-id]').forEach(tr => tr.onclick = () => modalActivo(m, acts.find(a => a.id === Number(tr.dataset.id))));
+  if (ed) $$('tr[data-cat]').forEach(tr => tr.onclick = () => modalCategoria(m, cats.find(c => c.id === Number(tr.dataset.cat))));
+  if ($('#b-cat')) $('#b-cat').onclick = () => modalCategoria(m, null);
+  $('#b-csv').onclick = () => csv('activos_fijos.csv', [['Codigo', 'Activo', 'Categoria', 'Marca', 'Serie', 'Ubicacion', 'Responsable', 'Centro', 'Adquisicion', 'Inicio depreciacion', 'Costo', 'Residual', 'Vida (meses)', 'Acumulada', 'En libros', 'Cuota mensual', 'Estado'],
+    ...filas.map(a => [a.codigo, a.nombre, catN(a.categoria_id), a.marca, a.serie, a.ubicacion, a.responsable, centroCod(a.centro_costo_id), a.fecha_adquisicion, a.inicio_depreciacion, a.costo, a.valor_residual, a.vida_util_meses, a.acumulada, a.libros, a.cuota, a.estado])]);
+}
+function modalCategoria(m, c) {
+  const movs = cache.cuentas.filter(x => x.acepta_movimientos && x.activa);
+  const sel = (n, tipo, v) => `<select name="${n}" required>${movs.filter(x => !tipo || x.tipo === tipo).map(x => `<option value="${x.id}" ${x.id === v ? 'selected' : ''}>${esc(etiquetaCuenta(x))}</option>`).join('')}</select>`;
+  const base = c || cache.activosCat[0] || {};
+  abrirModal(`<h2>${c ? esc(c.nombre) : 'Nueva categoría'}</h2><div class="rejilla">
+    <label class="campo">Nombre<input name="nombre" value="${esc(c?.nombre || '')}" required></label>
+    <label class="campo">Vida útil (meses)<input name="vida" type="number" min="1" value="${c?.vida_util_meses || 60}" required></label>
+    <label class="campo ancho">Cuenta del activo${sel('a', 'activo', base.cuenta_activo_id)}</label>
+    <label class="campo ancho">Depreciación acumulada${sel('d', 'activo', base.cuenta_dep_acum_id)}</label>
+    <label class="campo ancho">Gasto por depreciación${sel('g', '', base.cuenta_gasto_id)}</label>
+    <label class="campo chk"><input type="checkbox" name="activa" ${c?.activa === false ? '' : 'checked'}> Activa</label></div>
+    <p class="muted" style="font-size:12.5px">Cambiar la vida útil aquí no cambia los activos ya registrados; solo es la sugerencia para los nuevos.</p>`,
+  async d => {
+    const g = n => $(`[name=${n}]`, d);
+    const v = { nombre: g('nombre').value.trim(), vida_util_meses: Number(g('vida').value), cuenta_activo_id: Number(g('a').value), cuenta_dep_acum_id: Number(g('d').value), cuenta_gasto_id: Number(g('g').value), activa: g('activa').checked };
+    if (c) await q(sb.from('activos_categorias').update(v).eq('id', c.id)); else await q(sb.from('activos_categorias').insert(v));
+    avisar('Categoría guardada'); vActivos(m);
+  });
+}
+function primeroMesSiguiente(f) { const [y, mo] = f.split('-').map(Number), d = new Date(y, mo, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; }
+function modalActivo(m, a) {
+  const ed = puede('activos.editar') && (!a || a.estado === 'activo');
+  const conDep = a && a.acumulada - Number(a.dep_inicial) > 0.004;
+  const ro = ed ? '' : 'disabled', roDep = ed && !conDep ? '' : 'disabled';
+  const v = a || { fecha_adquisicion: hoy(), inicio_depreciacion: primeroMesSiguiente(hoy()), valor_residual: 0, dep_inicial: 0, categoria_id: cache.activosCat.find(c => c.activa)?.id };
+  const catDe = id => cache.activosCat.find(c => c.id === Number(id));
+  const d = abrirModal(`<h2>${a ? esc(a.codigo + ' · ' + a.nombre) : 'Nuevo activo fijo'}</h2>
+    ${a?.estado === 'baja' ? `<div class="aviso error">Dado de baja el ${fecha(a.fecha_baja)} (${esc(TIPOS_BAJA[a.tipo_baja])}): ${esc(a.motivo_baja || '')}${Number(a.valor_venta) ? ' · recibido C$ ' + fmt(a.valor_venta) : ''}</div>` : ''}
+    ${conDep && ed ? '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Ya tiene depreciación registrada: el costo, la vida útil y las fechas no se cambian.</p>' : ''}
+    <div class="rejilla">
+      <label class="campo">Código<input name="codigo" value="${esc(v.codigo || '')}" required ${ro} placeholder="AF-001"></label>
+      <label class="campo ancho">Nombre<input name="nombre" value="${esc(v.nombre || '')}" required ${ro} placeholder="Camioneta Toyota Hilux"></label>
+      <label class="campo">Categoría<select name="categoria_id" ${roDep}>${cache.activosCat.filter(c => c.activa || c.id === v.categoria_id).map(c => `<option value="${c.id}" ${c.id === v.categoria_id ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></label>
+      <label class="campo">Marca / modelo<input name="marca" value="${esc(v.marca || '')}" ${ro}></label>
+      <label class="campo">Serie o placa<input name="serie" value="${esc(v.serie || '')}" ${ro}></label>
+      <label class="campo">Ubicación<input name="ubicacion" value="${esc(v.ubicacion || '')}" ${ro}></label>
+      <label class="campo">Responsable<input name="responsable" value="${esc(v.responsable || '')}" ${ro}></label>
+      <label class="campo">Centro de costo<select name="centro_costo_id" ${ro}>${opcionesCentro(v.centro_costo_id)}</select></label>
+      <label class="campo">Fecha de compra<input type="date" name="fecha_adquisicion" value="${v.fecha_adquisicion}" required ${roDep}></label>
+      <label class="campo">Se deprecia desde<input type="date" name="inicio_depreciacion" value="${v.inicio_depreciacion}" required ${roDep}></label>
+      <label class="campo">Costo (C$)<input name="costo" class="monto" inputmode="decimal" value="${v.costo ? fmt(v.costo) : ''}" required ${roDep}></label>
+      <label class="campo">Valor residual (C$)<input name="valor_residual" class="monto" inputmode="decimal" value="${fmt(v.valor_residual || 0)}" ${roDep}></label>
+      <label class="campo">Vida útil (meses)<input name="vida_util_meses" type="number" min="1" value="${v.vida_util_meses || catDe(v.categoria_id)?.vida_util_meses || 60}" required ${roDep}></label>
+      <label class="campo">Depreciación acumulada anterior (C$)<input name="dep_inicial" class="monto" inputmode="decimal" value="${fmt(v.dep_inicial || 0)}" ${roDep} title="Solo para activos que ya se venían depreciando en AG Negocio"></label>
+      <label class="campo ancho">Descripción<textarea name="descripcion" rows="2" ${ro}>${esc(v.descripcion || '')}</textarea></label>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:8px 0 0" id="cuota-act"></p>
+    ${a ? `<p style="margin:8px 0 0">Acumulada C$ ${fmt(a.acumulada)} · en libros <b>C$ ${fmt(a.libros)}</b>${a.asiento_baja_id && puede('contabilidad.ver') ? ` · <a href="#asiento/${a.asiento_baja_id}" onclick="document.getElementById('modal').close()">asiento de baja</a>` : ''}</p>` : ''}`,
+  async dl => {
+    if (!ed) return;
+    const g = n => $(`[name=${n}]`, dl).value;
+    const v2 = { codigo: g('codigo').trim(), nombre: g('nombre').trim(), marca: g('marca').trim() || null, serie: g('serie').trim() || null, ubicacion: g('ubicacion').trim() || null,
+      responsable: g('responsable').trim() || null, centro_costo_id: Number(g('centro_costo_id')) || null, descripcion: g('descripcion').trim() || null };
+    if (!conDep) Object.assign(v2, { categoria_id: Number(g('categoria_id')), fecha_adquisicion: g('fecha_adquisicion'), inicio_depreciacion: g('inicio_depreciacion'),
+      costo: num(g('costo')), valor_residual: num(g('valor_residual')), vida_util_meses: Number(g('vida_util_meses')), dep_inicial: num(g('dep_inicial')) });
+    if (!conDep && !(v2.costo > 0)) { avisar('Escriba el costo', 'error'); return false; }
+    if (a) await q(sb.from('activos_fijos').update(v2).eq('id', a.id)); else await q(sb.from('activos_fijos').insert(v2));
+    avisar('Activo guardado'); vActivos(m);
+  }, { textoGuardar: ed ? 'Guardar' : 'Cerrar',
+       extraIzq: puede('activos.editar') && a ? (a.estado === 'activo' ? '<button type="button" class="btn peligro" id="b-baja">Dar de baja</button>' : '<button type="button" class="btn sec" id="b-anular-baja">Anular la baja</button>') : '' });
+  const cuota = () => { const c = num($('[name=costo]', d).value), r = num($('[name=valor_residual]', d).value), n = Number($('[name=vida_util_meses]', d).value);
+    $('#cuota-act', d).textContent = c > 0 && n > 0 ? `Cuota mensual: C$ ${fmt(r2((c - r) / n))} durante ${n} meses (${fmtQ(r2(n / 12))} años).` : ''; };
+  ['costo', 'valor_residual', 'vida_util_meses'].forEach(n => $(`[name=${n}]`, d).addEventListener('input', cuota)); cuota();
+  $('[name=categoria_id]', d).onchange = ev => { const c = catDe(ev.target.value); if (c) { $('[name=vida_util_meses]', d).value = c.vida_util_meses; cuota(); } };
+  $('[name=fecha_adquisicion]', d).onchange = ev => { if (ev.target.value) $('[name=inicio_depreciacion]', d).value = primeroMesSiguiente(ev.target.value); };
+  if ($('#b-baja', d)) $('#b-baja', d).onclick = () => modalBajaActivo(m, a);
+  if ($('#b-anular-baja', d)) $('#b-anular-baja', d).onclick = async () => {
+    const motivo = prompt('Motivo para anular la baja'); if (!motivo) return;
+    try { await q(sb.rpc('anular_baja_activo', { p_id: a.id, p_motivo: motivo })); d.close(); avisar('Baja anulada'); vActivos(m); } catch (e) { fallo(e); }
+  };
+}
+function modalBajaActivo(m, a) {
+  const cobro = cache.cuentas.filter(x => x.acepta_movimientos && x.activa && x.tipo === 'activo' && /^1\.1/.test(x.codigo));
+  const d = abrirModal(`<h2>Dar de baja ${esc(a.codigo)}</h2>
+    <p>${esc(a.nombre)} · costo C$ ${fmt(a.costo)} · acumulada C$ ${fmt(a.acumulada)} · <b>en libros C$ ${fmt(a.libros)}</b></p>
+    <div class="rejilla">
+      <label class="campo">Fecha<input type="date" name="fecha" value="${hoy()}" required></label>
+      <label class="campo">Tipo<select name="tipo">${Object.entries(TIPOS_BAJA).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+      <label class="campo">Valor recibido (C$)<input name="venta" class="monto" inputmode="decimal" value="0"></label>
+      <label class="campo">Dónde entró el dinero<select name="cuenta"><option value="">—</option>${cobro.map(x => `<option value="${x.id}">${esc(etiquetaCuenta(x))}</option>`).join('')}</select></label>
+      <label class="campo ancho">Motivo<textarea name="motivo" rows="2" required></textarea></label>
+    </div><p class="muted" style="font-size:12.5px" id="res-baja"></p>
+    <p class="muted" style="font-size:12.5px;margin:0">Registre antes la depreciación hasta el mes anterior a la baja. Se genera el asiento: sale el costo y la depreciación acumulada; la diferencia con lo recibido es pérdida o ganancia.</p>`,
+  async dl => {
+    const g = n => $(`[name=${n}]`, dl).value;
+    await q(sb.rpc('dar_baja_activo', { p_id: a.id, p: { fecha: g('fecha'), tipo: g('tipo'), valor_venta: num(g('venta')), cuenta_cobro_id: Number(g('cuenta')) || null, motivo: g('motivo') } }));
+    avisar('Activo dado de baja y contabilizado'); vActivos(m);
+  }, { textoGuardar: 'Dar de baja' });
+  const res = () => { const v = num($('[name=venta]', d).value) || 0, dif = r2(v - a.libros);
+    $('#res-baja', d).innerHTML = dif > 0 ? `Ganancia en la venta: <b>C$ ${fmt(dif)}</b>` : dif < 0 ? `Pérdida: <b>C$ ${fmt(-dif)}</b>` : 'Sin pérdida ni ganancia.'; };
+  $('[name=venta]', d).addEventListener('input', res); res();
+}
+async function vDepreciacion(m, arg) {
+  const lista = await q(sb.from('depreciaciones').select('*').order('anio', { ascending: false }).order('mes', { ascending: false }).order('id', { ascending: false }));
+  const ed = puede('activos.editar');
+  const ultimaVigente = lista.find(x => x.estado === 'registrada');
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Depreciación mensual</h1><p><a href="#activos">← Activos fijos</a> · Un asiento por mes: gasto de depreciación contra depreciación acumulada</p></div>
+      <div class="acciones">${ed ? '<button class="btn" id="b-nueva">Registrar depreciación del mes</button>' : ''}</div></div>
+    <div class="tarjeta"><div class="envoltura">${lista.length ? `<table><thead><tr><th>Mes</th><th class="num">Activos</th><th class="num">Monto</th><th>Estado</th><th>Registró</th><th></th></tr></thead>
+      <tbody>${lista.map(x => `<tr><td><b>${MESES[x.mes - 1]} ${x.anio}</b></td><td class="num">${x.activos}</td><td class="num">${fmt(x.total)}</td>
+        <td><span class="etiqueta e-${x.estado === 'registrada' ? 'aprobado' : 'anulado'}">${x.estado === 'registrada' ? 'Registrada' : 'Anulada'}</span>${x.motivo_anulacion ? ` <span class="muted">${esc(x.motivo_anulacion)}</span>` : ''}</td>
+        <td class="muted">${esc(nombrePerfil(x.creado_por))} · ${fechaHora(x.creado_en)}</td>
+        <td style="white-space:nowrap">${x.asiento_id && puede('contabilidad.ver') ? `<a href="#asiento/${x.asiento_id}">Asiento</a>` : ''}${ed && x.id === ultimaVigente?.id ? ` <button class="btn sec chico" data-anular="${x.id}">Anular</button>` : ''}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="vacio"><span class="ilus">📉</span>Aún no se ha registrado ninguna depreciación.</div>'}</div></div>`;
+  $$('[data-anular]').forEach(b => b.onclick = () => abrirModal(`<h2>Anular depreciación</h2><p class="muted">Se registra el asiento de reversión. Solo se anula el último mes registrado.</p><label class="campo">Motivo<textarea name="motivo" rows="2" required></textarea></label>`,
+    async d => { await q(sb.rpc('anular_depreciacion', { p_id: Number(b.dataset.anular), p_motivo: $('[name=motivo]', d).value })); avisar('Depreciación anulada'); vDepreciacion(m); }, { textoGuardar: 'Anular' }));
+  const nueva = async () => {
+    await cargarCatalogos(); const acts = await cargarActivos();
+    let [y, mo] = hoy().split('-').map(Number);
+    if (ultimaVigente) { y = ultimaVigente.anio + (ultimaVigente.mes === 12 ? 1 : 0); mo = ultimaVigente.mes % 12 + 1; }
+    const d = abrirModal(`<h2>Registrar depreciación</h2><div class="rejilla">
+      <label class="campo">Mes<select name="mes">${MESES.map((n, i) => `<option value="${i + 1}" ${i + 1 === mo ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      <label class="campo">Año<input name="anio" type="number" value="${y}"></label></div><div id="prev-dep" style="margin-top:10px"></div>`,
+    async dl => { const id = await q(sb.rpc('registrar_depreciacion', { p_anio: Number($('[name=anio]', dl).value), p_mes: Number($('[name=mes]', dl).value) })); avisar('Depreciación registrada y contabilizada'); if (location.hash !== '#depreciacion') location.hash = 'depreciacion'; else vDepreciacion(m); },
+    { textoGuardar: 'Registrar y contabilizar' });
+    const prev = async () => {
+      const r = await q(sb.rpc('calcular_depreciacion', { p_anio: Number($('[name=anio]', d).value), p_mes: Number($('[name=mes]', d).value) })).catch(() => []);
+      const tot = r.reduce((s, x) => s + Number(x.monto), 0);
+      $('#prev-dep', d).innerHTML = r.length ? `<div class="envoltura" style="max-height:300px"><table><thead><tr><th>Activo</th><th class="num">Cuota</th></tr></thead><tbody>
+        ${r.map(x => { const a = acts.find(z => z.id === Number(x.activo_id)) || {}; return `<tr><td>${esc(a.codigo)} · ${esc(a.nombre)}</td><td class="num">${fmt(x.monto)}</td></tr>`; }).join('')}
+        <tr class="total"><td>Total (${r.length})</td><td class="num">${fmt(tot)}</td></tr></tbody></table></div>` : '<p class="muted">No hay activos que depreciar ese mes.</p>';
+    };
+    $('[name=mes]', d).onchange = prev; $('[name=anio]', d).onchange = prev; prev();
+  };
+  if ($('#b-nueva')) $('#b-nueva').onclick = nueva;
+  if (arg === 'nueva' && ed) nueva();
 }
 
 // ---------- Vacaciones ----------

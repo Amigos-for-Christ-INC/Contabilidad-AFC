@@ -14,6 +14,8 @@ App web de contabilidad, cheques, inventario y planilla para Amigos for Christ s
 | `003-bancos-cheques.sql` | Migración 3: cuentas bancarias BANPRO, cheques con aprobación, impresión y conciliación básica. Se ejecuta después de `002`. |
 | `004-planilla-marcaje.sql` | Migración 4: colaboradores, planilla (INSS, IR, INATEC), vacaciones y conexión con la app de marcaje. Se ejecuta después de `003`. |
 | `005-pago-marcaje.sql` | Migración 5: consulta "Mi pago" para la app de marcaje (cada trabajador ve solo lo suyo). |
+| `006-pago-planilla.sql` | Migración 6: pago de planilla (asiento Salarios por pagar contra banco) y colillas por correo. |
+| `007-aguinaldo-liquidacion-activos.sql` | Migración 7: aguinaldo, liquidaciones (prestaciones e indemnización art. 45) y activos fijos con depreciación mensual. |
 | `integracion/PuenteContabilidad.gs` | Archivo para el Apps Script de la app de marcaje: envía cada noche colaboradores, marcas y permisos. |
 | `index.html` | La app web completa (no necesita compilar nada). |
 | `logo.png`, `logo-blanco.png` | Logos oficiales de Amigos for Christ. |
@@ -70,6 +72,15 @@ Cada envío actualiza nombre, cargo, lugar, líder y estado de los colaboradores
 
 En la app de marcaje, la pestaña **Mi pago** muestra al trabajador su salario mensual, el neto recibido en el mes y el detalle de cada planilla aprobada (INSS, IR, bonos y deducciones), además de su saldo de vacaciones. El servidor del marcaje solo consulta el correo de quien inició sesión.
 
+### Pagar la planilla (006)
+
+1. Con la planilla **aprobada**, quien aprueba planillas pulsa **💳 Pagar planilla** y descarga el **archivo BANPRO**.
+2. Sube el archivo en Banpro en Línea (Plan Nómina) y lo aprueba con su token. El dinero lo mueve siempre el banco, nunca la app.
+3. Cuando el banco confirma, vuelve a la app, elige la cuenta, la fecha y la referencia del lote y pulsa **Confirmar pago**. Se contabiliza Salarios por pagar contra el banco.
+4. Si dejó marcado el envío, la app de marcaje manda a cada colaborador su colilla por correo (buzón de Microsoft 365) con un permiso de un solo uso que vence en 2 horas. **Reenviar colillas** repite el envío; **Anular pago** revierte el asiento.
+
+El formato del archivo BANPRO es provisional (CSV: cuenta, nombre, cédula, monto, referencia) hasta tener la plantilla oficial de Plan Nómina del banco.
+
 ### Interfaz
 - Panel de inicio con gráficos de ingresos y gastos, inventario por bodega y saldos bancarios; cheques esperando su aprobación.
 - **Búsqueda rápida con Ctrl + K** (⌘K en Mac): pantallas, acciones, cheques, asientos, movimientos, productos y cuentas.
@@ -118,3 +129,10 @@ Ejecútelas desde la carpeta donde están los `.sql`.
 - Moneda funcional: córdobas.
 - El costo promedio es perpetuo. Los movimientos se valoran en el orden en que se aplican, así que conviene registrarlos al día.
 - El rojo de errores y alertas está fuera de la paleta de la marca; se usa solo para avisos.
+
+### Aguinaldo, liquidaciones y activos fijos (007)
+
+- **Aguinaldo:** Planillas → Nueva planilla → tipo *Aguinaldo*. Período del 1 de diciembre al 30 de noviembre, salario ÷ 360 × días trabajados, sin INSS, INATEC ni IR (Ley 822, art. 19). Se aprueba, se paga y se envían las colillas como cualquier planilla.
+- **Liquidación:** Planillas → *Calcular liquidación* (o desde la ficha del colaborador). Calcula salario pendiente, vacaciones no gozadas, aguinaldo proporcional e indemnización por antigüedad (art. 45: un mes por año los tres primeros años, 20 días desde el cuarto, proporcional, máximo cinco meses). El motivo define si hay indemnización y se puede cambiar. Al aprobarla, el colaborador queda inactivo y sus vacaciones en cero. El IR se calcula como un mes; el contador debe revisarlo si la persona tuvo otros ingresos en el año.
+- **Activos fijos:** registro de bienes con costo, valor residual y vida útil (sugerida del Reglamento de la Ley 822, art. 34). Cada mes, *Depreciación mensual* registra el asiento gasto contra depreciación acumulada. La baja (venta, descarte, robo o donación) registra la pérdida o ganancia. Permisos `activos.ver` y `activos.editar` (el rol Contador los recibe).
+- Pruebas: `pruebas/prueba-007.mjs`.
