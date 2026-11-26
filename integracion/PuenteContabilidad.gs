@@ -85,3 +85,72 @@ function miPago(token, anio, mes) {
   if (r.getResponseCode() >= 300) throw new Error('No se pudo consultar tu pago. Intenta más tarde.');
   return JSON.parse(r.getContentText());
 }
+
+/**
+ * Colillas de pago por correo. Contabilidad AFC llama esto al registrar el pago
+ * de una planilla, con un permiso de un solo uso (token) que vence en 2 horas.
+ * Se envían desde el mismo buzón de Microsoft 365 que usa el marcaje.
+ */
+function enviarColillas(planillaId, token) {
+  const p = PropertiesService.getScriptProperties();
+  const anon = p.getProperty('AFC_ANON'), clave = p.getProperty('AFC_CLAVE');
+  if (!anon || !clave) throw new Error('Faltan las propiedades AFC_ANON o AFC_CLAVE');
+  const base = (p.getProperty('AFC_URL') || 'https://qrjhpkicapbtnzagbnsx.supabase.co/rest/v1/rpc/recibir_marcaje').replace(/recibir_marcaje$/, '');
+  const rpc = (fn, body) => {
+    const r = UrlFetchApp.fetch(base + fn, {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { apikey: anon, Authorization: 'Bearer ' + anon }, payload: JSON.stringify(body)
+    });
+    const txt = r.getContentText();
+    if (r.getResponseCode() >= 300) {
+      let m = txt; try { m = JSON.parse(txt).message || txt; } catch (e) {}
+      throw new Error(m);
+    }
+    return txt ? JSON.parse(txt) : null;
+  };
+
+  const pl = rpc('colillas_planilla', { p_clave: clave, p_planilla: Number(planillaId), p_token: String(token || '') });
+  const c$ = n => 'C$ ' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const f = s => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) + '/' + String(s).slice(0, 4) : '';
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+  let enviados = 0, errores = 0, sinCorreo = 0;
+  const detalle = [];
+  pl.empleados.forEach(e => {
+    if (!e.correo) { sinCorreo++; detalle.push({ nombre: e.nombre, estado: 'sin correo' }); return; }
+    const fila = (t, v, neg) => '<tr><td style="padding:4px 0">' + esc(t) + '</td><td style="padding:4px 0;text-align:right">' + (neg ? '− ' : '') + c$(v) + '</td></tr>';
+    const ingresos = (e.novedades || []).filter(n => n.tipo === 'ingreso');
+    const deducciones = (e.novedades || []).filter(n => n.tipo !== 'ingreso');
+    const bloque = '<table style="width:100%;border-collapse:collapse;font-size:14px">'
+      + '<tr><td colspan="2" style="padding:6px 0 2px;font-weight:bold;color:#1B365D">Ingresos</td></tr>'
+      + fila((pl.tipo === 'aguinaldo' ? 'Aguinaldo' : pl.tipo === 'liquidacion' ? 'Salario pendiente' : 'Salario') + ' (' + e.dias_pagados + ' días)', e.salario)
+      + ingresos.map(n => fila(n.concepto + (n.detalle ? ' · ' + n.detalle : ''), n.monto)).join('')
+      + '<tr><td style="padding:4px 0;border-top:1px solid #ddd"><b>Total devengado</b></td><td style="padding:4px 0;border-top:1px solid #ddd;text-align:right"><b>' + c$(e.bruto) + '</b></td></tr>'
+      + '<tr><td colspan="2" style="padding:10px 0 2px;font-weight:bold;color:#1B365D">Deducciones</td></tr>'
+      + fila('INSS laboral', e.inss, true) + fila('IR', e.ir, true)
+      + deducciones.map(n => fila(n.concepto + (n.detalle ? ' · ' + n.detalle : ''), n.monto, true)).join('')
+      + '<tr><td style="padding:8px 0;border-top:2px solid #1B365D;font-size:16px"><b>Neto depositado</b></td><td style="padding:8px 0;border-top:2px solid #1B365D;text-align:right;font-size:16px"><b>' + c$(e.neto) + '</b></td></tr>'
+      + '</table>';
+    try {
+      if (typeof cupoCorreo_ === 'function' && cupoCorreo_() <= 0) throw new Error('Se agotó el cupo diario de correos');
+      enviarCorreo_({
+        to: e.correo, name: e.nombre, subject: (pl.tipo === 'liquidacion' ? 'Liquidación: ' : pl.tipo === 'aguinaldo' ? 'Aguinaldo: ' : 'Colilla de pago: ') + pl.descripcion,
+        htmlBody: plantillaCorreo_({
+          titulo: pl.tipo === 'liquidacion' ? 'Liquidación final' : pl.tipo === 'aguinaldo' ? 'Aguinaldo' : 'Colilla de pago',
+          intro: 'Hola ' + esc(String(e.nombre).split(' ')[0]) + ', este es el detalle de tu pago de la ' + esc(pl.descripcion).toLowerCase() + '.',
+          estado: { texto: 'Pagado el ' + f(pl.fecha_pagado), color: '#1E7B45' },
+          filas: [['Período', f(pl.desde) + ' al ' + f(pl.hasta)], ['Cargo', esc(e.cargo || '')], ['Cuenta BANPRO', esc(e.cuenta || '—')]],
+          bloque: bloque,
+          nota: 'Saldo de vacaciones: ' + Number(e.vacaciones || 0).toFixed(2) + ' días. También puedes ver tu pago del mes en la pestaña "Mi pago" de esta app. Si algo no coincide, escribe a Recursos Humanos.'
+        })
+      });
+      enviados++; detalle.push({ nombre: e.nombre, estado: 'enviado' });
+    } catch (err) {
+      errores++; detalle.push({ nombre: e.nombre, estado: 'error', error: String(err.message || err).slice(0, 200) });
+    }
+  });
+
+  try { rpc('registrar_envio_colillas', { p_clave: clave, p_planilla: Number(planillaId), p_enviados: enviados, p_errores: errores, p_detalle: detalle }); }
+  catch (err) { console.log('No se pudo registrar el envío: ' + err.message); }
+  return { enviados: enviados, errores: errores, sin_correo: sinCorreo };
+}
