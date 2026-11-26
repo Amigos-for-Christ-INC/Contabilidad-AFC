@@ -1,0 +1,1039 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contabilidad AFC</title>
+<link rel="icon" href="logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --azul:#00758F; --navy:#0A2240; --celeste:#96D1DE;
+  --fondo:#F5EDEC; --gris-fondo:#E3E0E7;
+  --texto:#414042; --texto2:#6D6E71;
+  --blanco:#fff; --error:#B3261E;
+  --radio:8px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:Raleway,Avenir,"Proxima Nova",sans-serif;color:var(--texto);background:var(--fondo);
+  font-size:15px;font-weight:400;font-feature-settings:"lnum" 1,"tnum" 1;font-variant-numeric:lining-nums tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit;font-feature-settings:"lnum" 1,"tnum" 1}
+a{color:var(--azul)}
+h1,h2,h3{margin:0;color:var(--navy);font-weight:700}
+h1{font-size:24px} h2{font-size:18px} h3{font-size:15px}
+
+/* Estructura */
+.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.lateral{background:var(--navy);color:#fff;padding:20px 14px;position:sticky;top:0;height:100vh;overflow:auto;display:flex;flex-direction:column;gap:18px}
+.lateral img{width:150px;margin:4px 8px 6px}
+.lateral .sub{color:var(--celeste);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:0 8px}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav .grupo{color:var(--celeste);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin:14px 8px 4px}
+.nav a{color:#fff;text-decoration:none;padding:8px 10px;border-radius:6px;font-weight:500;font-size:14px}
+.nav a:hover{background:rgba(255,255,255,.08)}
+.nav a.activo{background:var(--azul);font-weight:600}
+.usuario{margin-top:auto;border-top:1px solid rgba(255,255,255,.15);padding:12px 8px 0;font-size:13px}
+.usuario b{display:block;font-weight:600}
+.usuario span{color:var(--celeste)}
+.usuario button{margin-top:8px;background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:6px;padding:5px 10px;cursor:pointer}
+main{padding:28px 32px 60px;min-width:0}
+.barra-movil{display:none}
+
+/* Componentes */
+.cabecera{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.cabecera p{margin:4px 0 0;color:var(--texto2)}
+.tarjeta{background:#fff;border-radius:var(--radio);padding:18px 20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(10,34,64,.06)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:16px}
+.kpi{background:#fff;border-radius:var(--radio);padding:16px 18px;box-shadow:0 1px 2px rgba(10,34,64,.06)}
+.kpi .et{font-size:13px;color:var(--texto2);font-weight:500}
+.kpi .val{font-size:26px;font-weight:900;color:var(--azul);margin-top:6px;white-space:nowrap}
+.kpi .val.navy{color:var(--navy)}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--azul);background:var(--azul);color:#fff;border-radius:6px;
+  padding:8px 14px;font-weight:600;font-size:14px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{filter:brightness(1.08)}
+.btn.sec{background:#fff;color:var(--azul)}
+.btn.navy{background:var(--navy);border-color:var(--navy)}
+.btn.peligro{background:#fff;color:var(--error);border-color:var(--error)}
+.btn.chico{padding:4px 10px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.acciones{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.filtros{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+label.campo{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--texto2)}
+input,select,textarea{border:1px solid #cfccd6;border-radius:6px;padding:7px 9px;background:#fff;font-size:14px;min-width:0}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--azul);outline-offset:-1px;border-color:var(--azul)}
+input.invalido{border-color:var(--error);background:#fdf3f2}
+.rejilla{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.rejilla .ancho{grid-column:1/-1}
+.envoltura{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;color:var(--navy);border-bottom:2px solid var(--gris-fondo);padding:8px;white-space:nowrap;font-size:13px}
+td{border-bottom:1px solid var(--gris-fondo);padding:7px 8px;vertical-align:middle}
+td.num,th.num{text-align:right;white-space:nowrap}
+tr.clic{cursor:pointer} tr.clic:hover td{background:#f7fbfc}
+tr.grupo td{font-weight:600;color:var(--navy)}
+tr.total td{font-weight:700;color:var(--navy);border-top:2px solid var(--navy);border-bottom:none}
+.ind{display:inline-block}
+.etiqueta{display:inline-block;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:600}
+.e-borrador{background:var(--azul);color:#fff}
+.e-contabilizado{background:var(--navy);color:#fff}
+.e-anulado{background:var(--gris-fondo);color:var(--texto2)}
+.e-abierto{background:var(--azul);color:#fff}
+.e-cerrado{background:var(--navy);color:#fff}
+.muted{color:var(--texto2)}
+.vacio{padding:36px 10px;text-align:center;color:var(--texto2)}
+.cargando{padding:36px 10px;color:var(--texto2)}
+.lineas td{padding:4px}
+.lineas input,.lineas select{width:100%}
+.lineas .c-cuenta{min-width:260px} .lineas .c-monto{width:130px} .lineas .c-centro{width:150px}
+.lineas input.monto{text-align:right}
+.totales{display:flex;gap:24px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px;font-size:14px}
+.totales b{color:var(--navy)}
+.dif-mal{color:var(--error);font-weight:700}
+.dif-bien{color:var(--azul);font-weight:700}
+.aviso{border-left:4px solid var(--azul);background:#fff;padding:10px 14px;border-radius:6px;margin-bottom:14px}
+.aviso.error{border-color:var(--error)}
+.pestanas{display:flex;gap:4px;border-bottom:2px solid var(--gris-fondo);margin-bottom:16px}
+.pestanas a{padding:8px 14px;text-decoration:none;color:var(--texto2);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px}
+.pestanas a.activo{color:var(--azul);border-color:var(--azul)}
+.reporte-titulo{text-align:center;margin-bottom:12px}
+.reporte-titulo img{height:44px;margin-bottom:6px}
+.reporte-titulo .muted{font-size:13px}
+.meta{font-size:13px;color:var(--texto2);display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}
+details summary{cursor:pointer;color:var(--azul);font-size:13px}
+pre{white-space:pre-wrap;font-size:12px;background:var(--fondo);padding:8px;border-radius:6px;max-width:640px}
+
+/* Acceso */
+.acceso{min-height:100vh;display:grid;place-items:center;background:var(--navy);padding:20px}
+.acceso .caja{background:#fff;border-radius:12px;padding:30px;width:100%;max-width:420px}
+.acceso img{width:190px;display:block;margin:0 auto 10px}
+.acceso h1{text-align:center;color:var(--azul);margin-bottom:4px}
+.acceso p.muted{text-align:center;margin:0 0 20px}
+.acceso form{display:flex;flex-direction:column;gap:12px}
+.acceso .btn{justify-content:center}
+.separador{text-align:center;color:var(--texto2);font-size:13px;margin:6px 0}
+
+/* Avisos y modal */
+#aviso-flotante{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.toast{background:var(--navy);color:#fff;padding:10px 16px;border-radius:8px;max-width:420px;box-shadow:0 4px 14px rgba(0,0,0,.2);font-size:14px}
+.toast.error{background:#fff;color:var(--error);border:2px solid var(--error)}
+dialog{border:none;border-radius:12px;padding:0;width:min(560px,94vw);box-shadow:0 10px 40px rgba(10,34,64,.3)}
+dialog::backdrop{background:rgba(10,34,64,.45)}
+dialog .cuerpo{padding:22px}
+dialog .pie{display:flex;justify-content:space-between;gap:8px;padding:14px 22px;background:var(--fondo)}
+.chk{flex-direction:row !important;align-items:center;gap:8px !important;font-size:14px !important;color:var(--texto) !important;font-weight:500 !important}
+
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .lateral{position:fixed;inset:0 auto 0 0;width:250px;z-index:40;transform:translateX(-100%);transition:transform .2s}
+  .lateral.abierto{transform:none}
+  .barra-movil{display:flex;align-items:center;gap:12px;background:var(--navy);padding:10px 16px;position:sticky;top:0;z-index:30}
+  .barra-movil img{height:30px}
+  .barra-movil button{background:none;border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:6px;padding:5px 10px}
+  main{padding:18px 16px 60px}
+}
+@media print{
+  body{background:#fff}
+  .lateral,.barra-movil,.no-imprimir,.filtros,.pestanas,#aviso-flotante{display:none !important}
+  .app{display:block} main{padding:0}
+  .tarjeta{box-shadow:none;padding:0}
+}
+</style>
+</head>
+<body>
+<div id="raiz"></div>
+<div id="aviso-flotante"></div>
+<dialog id="modal"></dialog>
+
+<script>
+// ============================================================
+// Configuración. Al publicar, puede fijar aquí su proyecto de
+// Supabase; si se dejan vacíos, la app los pide la primera vez.
+// La clave "anon" es pública: la seguridad la da RLS en la base.
+// ============================================================
+const CONFIG = { url: 'https://qrjhpkicapbtnzagbnsx.supabase.co', anonKey: 'sb_publishable_GDf_Q-GC_y-FomxtyV14ng_FqI2n2pR' };
+const ORGANIZACION = 'Amigos for Christ';
+
+// ---------- utilidades ----------
+const LS = {
+  get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch {} },
+  del(k){ try { localStorage.removeItem(k); } catch {} }
+};
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = v => { if (v === null || v === undefined || v === '') return 0; const n = Number(String(v).replace(/,/g, '')); return isFinite(n) ? n : NaN; };
+const r2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
+const fmt = n => (n === null || n === undefined || n === '') ? '' : Number(n).toLocaleString('es-NI', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtZ = n => Number(n) === 0 ? '–' : fmt(n);
+const fecha = d => d ? String(d).slice(0, 10).split('-').reverse().join('/') : '';
+const fechaHora = d => d ? new Date(d).toLocaleString('es-NI', { dateStyle: 'short', timeStyle: 'short' }) : '';
+const hoy = () => { const t = new Date(); t.setMinutes(t.getMinutes() - t.getTimezoneOffset()); return t.toISOString().slice(0, 10); };
+const rangoMes = (base = hoy()) => { const [y, m] = base.split('-').map(Number); const ult = new Date(y, m, 0).getDate(); return [`${y}-${String(m).padStart(2,'0')}-01`, `${y}-${String(m).padStart(2,'0')}-${ult}`]; };
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const TIPOS_ASIENTO = { diario: 'Diario', ingreso: 'Ingreso', egreso: 'Egreso', ajuste: 'Ajuste', apertura: 'Apertura', cierre: 'Cierre' };
+const TIPOS_CUENTA = { activo: 'Activo', pasivo: 'Pasivo', patrimonio: 'Patrimonio', ingreso: 'Ingreso', costo: 'Costo', gasto: 'Gasto' };
+const ROLES = { admin: 'Administrador', contador: 'Contador', consulta: 'Consulta' };
+const ordenCodigo = (a, b) => { const x = a.codigo.split('.').map(Number), y = b.codigo.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] ?? -1) - (y[i] ?? -1); if (d) return d; } return 0; };
+
+function avisar(msg, tipo = 'ok') {
+  const t = document.createElement('div');
+  t.className = 'toast' + (tipo === 'error' ? ' error' : '');
+  t.textContent = msg;
+  $('#aviso-flotante').append(t);
+  setTimeout(() => t.remove(), tipo === 'error' ? 7000 : 3500);
+}
+function mensajeError(e) {
+  const m = e?.message || String(e);
+  const mapa = [
+    [/Invalid login credentials/i, 'Correo o contraseña incorrectos'],
+    [/Email not confirmed/i, 'Confirme su correo antes de entrar (revise su bandeja de entrada)'],
+    [/provider is not enabled|Unsupported provider/i, 'El inicio con Microsoft aún no está activado en Supabase'],
+    [/User already registered/i, 'Ese correo ya tiene una cuenta'],
+    [/Password should be at least/i, 'La contraseña es muy corta'],
+    [/cuentas_codigo_key/, 'Ya existe una cuenta con ese código'],
+    [/centros_costo_codigo_key/, 'Ya existe un centro de costo con ese código'],
+    [/asiento_lineas_cuenta_id_fkey|cuentas_padre_id_fkey/, 'No se puede eliminar: tiene movimientos o subcuentas. Puede desactivarla.'],
+    [/asiento_lineas_centro_costo_id_fkey/, 'No se puede eliminar: el centro de costo tiene movimientos. Puede desactivarlo.'],
+    [/row-level security|permission denied/i, 'No tiene permiso para esta acción'],
+    [/Failed to fetch|NetworkError/i, 'No hay conexión con el servidor']
+  ];
+  for (const [re, txt] of mapa) if (re.test(m)) return txt;
+  return m;
+}
+function fallo(e) { console.error(e); avisar(mensajeError(e), 'error'); }
+async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
+function csv(nombre, filas) {
+  const t = filas.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + t], { type: 'text/csv;charset=utf-8' }));
+  a.download = nombre; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// ---------- estado ----------
+let sb = null, yo = null;
+const cache = { cuentas: [], centros: [], perfiles: [] };
+const editor = () => yo && ['admin', 'contador'].includes(yo.rol);
+const admin = () => yo && yo.rol === 'admin';
+const cuentaPorId = id => cache.cuentas.find(c => c.id === Number(id));
+const etiquetaCuenta = c => c ? `${c.codigo} — ${c.nombre}` : '';
+const nombrePerfil = id => cache.perfiles.find(p => p.id === id)?.nombre || '';
+function cuentaDesdeTexto(txt, soloMovimiento = true) {
+  const t = String(txt || '').trim(); if (!t) return null;
+  const cod = t.split(' — ')[0].trim();
+  const c = cache.cuentas.find(x => x.codigo === cod);
+  if (!c) return null;
+  if (soloMovimiento && (!c.acepta_movimientos || !c.activa)) return null;
+  return c;
+}
+async function cargarCatalogos() {
+  const [cu, ce, pe] = await Promise.all([
+    q(sb.from('cuentas').select('*')),
+    q(sb.from('centros_costo').select('*').order('codigo')),
+    q(sb.from('perfiles').select('*').order('nombre'))
+  ]);
+  cache.cuentas = cu.sort(ordenCodigo); cache.centros = ce; cache.perfiles = pe;
+}
+const opcionesCentro = (sel, todos = false) =>
+  `<option value="">${todos ? 'Todos los centros' : '—'}</option>` +
+  cache.centros.filter(c => c.activo || c.id === Number(sel)).map(c => `<option value="${c.id}" ${c.id === Number(sel) ? 'selected' : ''}>${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join('');
+const datalistCuentas = (id, soloMovimiento) =>
+  `<datalist id="${id}">` + cache.cuentas.filter(c => !soloMovimiento || (c.acepta_movimientos && c.activa)).map(c => `<option value="${esc(etiquetaCuenta(c))}"></option>`).join('') + '</datalist>';
+
+// ---------- modal ----------
+function abrirModal(html, alGuardar, { textoGuardar = 'Guardar', extraIzq = '' } = {}) {
+  const d = $('#modal');
+  d.innerHTML = `<form method="dialog"><div class="cuerpo">${html}</div><div class="pie"><div>${extraIzq}</div><div class="acciones"><button type="button" class="btn sec" data-cerrar>Cancelar</button><button class="btn" value="ok">${esc(textoGuardar)}</button></div></div></form>`;
+  $('[data-cerrar]', d).onclick = () => d.close();
+  $('form', d).onsubmit = async ev => {
+    ev.preventDefault();
+    const b = $('button[value=ok]', d); b.disabled = true;
+    try { if (await alGuardar(d) !== false) d.close(); } catch (e) { fallo(e); } finally { b.disabled = false; }
+  };
+  d.showModal();
+  $('input,select,textarea', d)?.focus();
+  return d;
+}
+
+// ============================================================
+// Arranque, configuración y acceso
+// ============================================================
+function configActual() { return { url: CONFIG.url || LS.get('afc_sb_url') || '', key: CONFIG.anonKey || LS.get('afc_sb_key') || '' }; }
+
+function pantallaConfig() {
+  $('#raiz').innerHTML = `<div class="acceso"><div class="caja">
+    <img src="logo.png" alt="Amigos for Christ"><h1>Contabilidad</h1>
+    <p class="muted">Conecte la app con su proyecto de Supabase</p>
+    <form id="f-config">
+      <label class="campo">URL del proyecto<input name="url" placeholder="https://xxxx.supabase.co" required></label>
+      <label class="campo">Clave pública (anon key)<input name="key" required></label>
+      <button class="btn">Conectar</button>
+      <p class="muted" style="font-size:12px;margin:0">Están en Supabase → Project Settings → API.</p>
+    </form></div></div>`;
+  $('#f-config').onsubmit = e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    LS.set('afc_sb_url', String(f.get('url')).trim().replace(/\/$/, ''));
+    LS.set('afc_sb_key', String(f.get('key')).trim());
+    iniciar();
+  };
+}
+
+function pantallaAcceso(modo = 'entrar') {
+  const registro = modo === 'registro';
+  $('#raiz').innerHTML = `<div class="acceso"><div class="caja">
+    <img src="logo.png" alt="Amigos for Christ"><h1>Contabilidad</h1>
+    <p class="muted">${registro ? 'Cree su usuario' : 'Ingrese con su cuenta'}</p>
+    <form id="f-acceso">
+      <button type="button" class="btn navy" id="b-ms">Entrar con Microsoft</button>
+      <div class="separador">o con correo</div>
+      ${registro ? '<label class="campo">Nombre completo<input name="nombre" required></label>' : ''}
+      <label class="campo">Correo<input name="correo" type="email" autocomplete="email" required></label>
+      <label class="campo">Contraseña<input name="clave" type="password" autocomplete="${registro ? 'new-password' : 'current-password'}" minlength="8" required></label>
+      <button class="btn">${registro ? 'Crear usuario' : 'Entrar'}</button>
+      <a href="#" id="l-modo" style="text-align:center;font-size:13px">${registro ? 'Ya tengo usuario' : 'Crear un usuario nuevo'}</a>
+      <a href="#" id="l-config" style="text-align:center;font-size:12px;color:var(--texto2)">Cambiar proyecto de Supabase</a>
+    </form></div></div>`;
+  $('#l-modo').onclick = e => { e.preventDefault(); pantallaAcceso(registro ? 'entrar' : 'registro'); };
+  $('#l-config').onclick = e => { e.preventDefault(); LS.del('afc_sb_url'); LS.del('afc_sb_key'); pantallaConfig(); };
+  $('#b-ms').onclick = async () => {
+    const { error } = await sb.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'email', redirectTo: location.origin + location.pathname } });
+    if (error) fallo(error);
+  };
+  $('#f-acceso').onsubmit = async e => {
+    e.preventDefault();
+    const f = new FormData(e.target), b = $('button:not([type])', e.target);
+    b.disabled = true;
+    try {
+      if (registro) {
+        const r = await sb.auth.signUp({ email: f.get('correo'), password: f.get('clave'), options: { data: { full_name: f.get('nombre') } } });
+        if (r.error) throw r.error;
+        if (!r.data.session) { avisar('Usuario creado. Revise su correo para confirmarlo y luego entre.'); pantallaAcceso('entrar'); return; }
+        await entrar(r.data.session.user);
+      } else {
+        const r = await sb.auth.signInWithPassword({ email: f.get('correo'), password: f.get('clave') });
+        if (r.error) throw r.error;
+        await entrar(r.data.user);
+      }
+    } catch (err) { fallo(err); } finally { b.disabled = false; }
+  };
+}
+
+async function iniciar() {
+  const c = configActual();
+  if (!c.url || !c.key) return pantallaConfig();
+  try {
+    sb = supabase.createClient(c.url, c.key);
+    sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') { yo = null; pantallaAcceso(); } });
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return pantallaAcceso();
+    await entrar(session.user);
+  } catch (e) { fallo(e); pantallaAcceso(); }
+}
+
+async function entrar(user) {
+  const p = await q(sb.from('perfiles').select('*').eq('id', user.id).maybeSingle());
+  if (!p) {
+    $('#raiz').innerHTML = `<div class="acceso"><div class="caja"><img src="logo.png" alt="Amigos for Christ">
+      <div class="aviso error">Su usuario no tiene perfil en el sistema. Verifique que el script <b>schema.sql</b> se ejecutó en Supabase antes de crear usuarios.</div>
+      <button class="btn" onclick="sb.auth.signOut()">Salir</button></div></div>`;
+    return;
+  }
+  yo = p;
+  await cargarCatalogos();
+  armarEstructura();
+  mostrar();
+}
+
+// ============================================================
+// Estructura y rutas
+// ============================================================
+const MENU = [
+  ['', 'Inicio'],
+  ['g', 'Registro'], ['asientos', 'Asientos'], ['catalogo', 'Catálogo de cuentas'], ['centros', 'Centros de costo'], ['tipos-cambio', 'Tipos de cambio'],
+  ['g', 'Reportes'], ['mayor', 'Libro mayor'], ['balanza', 'Balanza de comprobación'], ['estados', 'Estados financieros'],
+  ['g', 'Administración'], ['periodos', 'Períodos y cierre'], ['usuarios', 'Usuarios', 'admin'], ['bitacora', 'Bitácora', 'admin']
+];
+function armarEstructura() {
+  $('#raiz').innerHTML = `
+  <div class="barra-movil"><button id="b-menu">☰ Menú</button><img src="logo-blanco.png" alt="Amigos for Christ"></div>
+  <div class="app">
+    <aside class="lateral" id="lateral">
+      <div><img src="logo-blanco.png" alt="Amigos for Christ"><div class="sub">Contabilidad</div></div>
+      <nav class="nav">${MENU.filter(m => !m[2] || admin()).map(([r, t]) => r === 'g' ? `<div class="grupo">${t}</div>` : `<a href="#${r}" data-ruta="${r}">${t}</a>`).join('')}</nav>
+      <div class="usuario"><b>${esc(yo.nombre || yo.correo)}</b><span>${ROLES[yo.rol]}</span><br><button id="b-salir">Salir</button></div>
+    </aside>
+    <main id="principal"></main>
+  </div>`;
+  $('#b-salir').onclick = () => sb.auth.signOut();
+  $('#b-menu').onclick = () => $('#lateral').classList.toggle('abierto');
+  $$('#lateral a').forEach(a => a.addEventListener('click', () => $('#lateral').classList.remove('abierto')));
+}
+const RUTAS = {
+  '': vInicio, asientos: vAsientos, asiento: vAsiento, catalogo: vCatalogo, centros: vCentros, 'tipos-cambio': vTiposCambio,
+  mayor: vMayor, balanza: vBalanza, estados: vEstados, periodos: vPeriodos, usuarios: vUsuarios, bitacora: vBitacora
+};
+async function mostrar() {
+  if (!yo) return;
+  const [ruta, arg] = location.hash.replace(/^#/, '').split('/');
+  const vista = RUTAS[ruta] || vInicio;
+  $$('#lateral a').forEach(a => a.classList.toggle('activo', a.dataset.ruta === (RUTAS[ruta] ? ruta : '') || (ruta === 'asiento' && a.dataset.ruta === 'asientos')));
+  const m = $('#principal');
+  m.innerHTML = '<div class="cargando">Cargando…</div>';
+  try { await vista(m, arg); } catch (e) { m.innerHTML = `<div class="aviso error">${esc(mensajeError(e))}</div>`; console.error(e); }
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', mostrar);
+
+// ============================================================
+// Inicio
+// ============================================================
+async function vInicio(m) {
+  const [d, h] = rangoMes();
+  const [bal, borr, cont, tc] = await Promise.all([
+    q(sb.rpc('balanza', { p_desde: d, p_hasta: h })),
+    q(sb.from('asientos').select('id,fecha,concepto').eq('estado', 'borrador').order('fecha', { ascending: false }).limit(6)),
+    sb.from('asientos').select('id', { count: 'exact', head: true }).eq('estado', 'contabilizado').gte('fecha', d).lte('fecha', h),
+    q(sb.from('tipos_cambio').select('*').eq('fecha', hoy()).maybeSingle())
+  ]);
+  const mov = tipo => bal.filter(x => x.nivel === 1 && x.tipo === tipo).reduce((s, x) => s + Number(x.saldo_final) - Number(x.saldo_inicial), 0);
+  const ing = mov('ingreso'), egr = mov('costo') + mov('gasto');
+  const [y, mes] = d.split('-').map(Number);
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Hola, ${esc((yo.nombre || '').split(' ')[0])}</h1><p>${MESES[mes - 1]} ${y} · ${ORGANIZACION}</p></div>
+      ${editor() ? '<a class="btn" href="#asiento/nuevo">+ Nuevo asiento</a>' : ''}</div>
+    ${tc ? '' : `<div class="aviso">No hay tipo de cambio registrado para hoy. ${editor() ? '<a href="#tipos-cambio">Registrarlo</a>' : ''}</div>`}
+    <div class="kpis">
+      <div class="kpi"><div class="et">Ingresos del mes (C$)</div><div class="val">${fmt(ing)}</div></div>
+      <div class="kpi"><div class="et">Costos y gastos del mes (C$)</div><div class="val navy">${fmt(egr)}</div></div>
+      <div class="kpi"><div class="et">Resultado del mes (C$)</div><div class="val">${fmt(ing - egr)}</div></div>
+      <div class="kpi"><div class="et">Asientos contabilizados del mes</div><div class="val navy">${cont.count ?? 0}</div></div>
+    </div>
+    <div class="tarjeta"><h2>Borradores pendientes</h2>
+      ${borr.length ? `<div class="envoltura"><table><tbody>${borr.map(a => `<tr class="clic" onclick="location.hash='asiento/${a.id}'"><td style="width:110px">${fecha(a.fecha)}</td><td>${esc(a.concepto)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No hay asientos en borrador.</p>'}
+    </div>
+    ${tc ? `<p class="muted">Tipo de cambio de hoy: C$ ${Number(tc.tasa).toFixed(4)} por US$ 1</p>` : ''}`;
+}
+
+// ============================================================
+// Asientos: listado
+// ============================================================
+let filtroAsientos = null;
+async function vAsientos(m) {
+  if (!filtroAsientos) { const [d, h] = rangoMes(); filtroAsientos = { desde: d, hasta: h, estado: '', texto: '' }; }
+  const f = filtroAsientos;
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Asientos contables</h1><p>Libro diario</p></div>
+      <div class="acciones">${editor() ? '<a class="btn" href="#asiento/nuevo">+ Nuevo asiento</a>' : ''}<button class="btn sec" id="b-csv">Exportar CSV</button></div></div>
+    <div class="tarjeta">
+      <form class="filtros" id="f-filtro">
+        <label class="campo">Desde<input type="date" name="desde" value="${f.desde}"></label>
+        <label class="campo">Hasta<input type="date" name="hasta" value="${f.hasta}"></label>
+        <label class="campo">Estado<select name="estado">
+          <option value="">Todos</option>${['borrador','contabilizado','anulado'].map(e => `<option value="${e}" ${f.estado === e ? 'selected' : ''}>${e[0].toUpperCase() + e.slice(1)}</option>`).join('')}</select></label>
+        <label class="campo" style="flex:1;min-width:180px">Buscar<input name="texto" value="${esc(f.texto)}" placeholder="Concepto o referencia"></label>
+        <button class="btn sec">Filtrar</button>
+      </form>
+      <div class="envoltura" id="lista"><div class="cargando">Cargando…</div></div>
+    </div>`;
+  $('#f-filtro').onsubmit = e => { e.preventDefault(); Object.assign(filtroAsientos, Object.fromEntries(new FormData(e.target))); vAsientos(m); };
+  let consulta = sb.from('asientos').select('id,numero,fecha,tipo,concepto,referencia,moneda,estado,asiento_lineas(debe,debe_me)')
+    .gte('fecha', f.desde).lte('fecha', f.hasta)
+    .order('fecha', { ascending: false }).order('numero', { ascending: false, nullsFirst: true }).limit(1000);
+  if (f.estado) consulta = consulta.eq('estado', f.estado);
+  const t = String(f.texto || '').replace(/[,()%*"\\]/g, ' ').trim();
+  if (t) consulta = consulta.or(`concepto.ilike."*${t}*",referencia.ilike."*${t}*"`);
+  const filas = await q(consulta);
+  const total = a => a.asiento_lineas.reduce((s, l) => s + Number(l.debe), 0);
+  $('#lista').innerHTML = filas.length ? `<table>
+    <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Referencia</th><th class="num">Total C$</th><th>Estado</th></tr></thead>
+    <tbody>${filas.map(a => `<tr class="clic" onclick="location.hash='asiento/${a.id}'">
+      <td>${a.numero ?? '<span class="muted">—</span>'}</td><td>${fecha(a.fecha)}</td><td>${TIPOS_ASIENTO[a.tipo]}</td>
+      <td>${esc(a.concepto)}${a.moneda === 'USD' ? ' <span class="muted">(US$)</span>' : ''}</td><td>${esc(a.referencia)}</td>
+      <td class="num">${fmt(total(a))}</td><td><span class="etiqueta e-${a.estado}">${a.estado}</span></td></tr>`).join('')}</tbody></table>`
+    : '<div class="vacio">No hay asientos con estos filtros.</div>';
+  $('#b-csv').onclick = () => csv(`asientos_${f.desde}_${f.hasta}.csv`,
+    [['Numero','Fecha','Tipo','Concepto','Referencia','Moneda','Total C$','Estado'],
+     ...filas.map(a => [a.numero ?? '', a.fecha, TIPOS_ASIENTO[a.tipo], a.concepto, a.referencia ?? '', a.moneda, total(a).toFixed(2), a.estado])]);
+}
+
+// ============================================================
+// Asiento: crear, editar, contabilizar, anular
+// ============================================================
+let plantillaAsiento = null;
+async function vAsiento(m, arg) {
+  let A;
+  if (arg === 'nuevo' || !arg) {
+    A = plantillaAsiento || { fecha: hoy(), tipo: 'diario', moneda: 'NIO', concepto: '', referencia: '', tipo_cambio: '', estado: 'nuevo',
+      lineas: [] };
+    plantillaAsiento = null;
+    if (!A.lineas.length) A.lineas = [{}, {}];
+    if (!editor()) { m.innerHTML = '<div class="aviso error">Su usuario es de consulta; no puede registrar asientos.</div>'; return; }
+  } else {
+    const a = await q(sb.from('asientos').select('*, asiento_lineas(*)').eq('id', Number(arg)).single());
+    a.asiento_lineas.sort((x, y) => x.orden - y.orden || x.id - y.id);
+    const usd = a.moneda === 'USD';
+    A = { ...a, tipo_cambio: a.tipo_cambio ?? '',
+      lineas: a.asiento_lineas.map(l => ({ cuenta_id: l.cuenta_id, centro_costo_id: l.centro_costo_id ?? '', descripcion: l.descripcion ?? '',
+        debe: usd ? l.debe_me : l.debe, haber: usd ? l.haber_me : l.haber, debe_c: l.debe, haber_c: l.haber })) };
+  }
+  const editable = editor() && (A.estado === 'nuevo' || A.estado === 'borrador');
+  return editable ? formAsiento(m, A) : verAsiento(m, A);
+}
+
+function verAsiento(m, A) {
+  const usd = A.moneda === 'USD';
+  const td = A.lineas.reduce((s, l) => s + Number(l.debe_c), 0), th = A.lineas.reduce((s, l) => s + Number(l.haber_c), 0);
+  const tdm = A.lineas.reduce((s, l) => s + Number(l.debe || 0), 0), thm = A.lineas.reduce((s, l) => s + Number(l.haber || 0), 0);
+  m.innerHTML = `
+    <div class="cabecera no-imprimir"><div><h1>Asiento ${A.numero ? 'Nº ' + A.numero : ''}</h1><p><a href="#asientos">← Volver a asientos</a></p></div>
+      <div class="acciones">
+        ${editor() ? '<button class="btn sec" id="b-dup">Duplicar</button>' : ''}
+        <button class="btn sec" onclick="print()">Imprimir</button>
+        ${editor() && A.estado === 'contabilizado' ? '<button class="btn peligro" id="b-anular">Anular</button>' : ''}
+      </div></div>
+    <div class="tarjeta">
+      <div class="reporte-titulo"><img src="logo.png" alt="Amigos for Christ"><h2>Comprobante de ${TIPOS_ASIENTO[A.tipo].toLowerCase()} ${A.numero ? 'Nº ' + A.anio + '-' + String(A.numero).padStart(4, '0') : ''}</h2>
+        <div class="muted">${fecha(A.fecha)} · <span class="etiqueta e-${A.estado}">${A.estado}</span></div></div>
+      ${A.estado === 'anulado' ? `<div class="aviso error">Anulado por ${esc(nombrePerfil(A.anulado_por))} el ${fechaHora(A.anulado_en)}. Motivo: ${esc(A.motivo_anulacion)}</div>` : ''}
+      <p><b>Concepto:</b> ${esc(A.concepto)}${A.referencia ? ` &nbsp; <b>Referencia:</b> ${esc(A.referencia)}` : ''}
+        ${usd ? ` &nbsp; <b>Moneda:</b> US$ a C$ ${Number(A.tipo_cambio).toFixed(4)}` : ''}</p>
+      <div class="envoltura"><table>
+        <thead><tr><th>Cuenta</th><th>Centro</th><th>Descripción</th>${usd ? '<th class="num">Debe US$</th><th class="num">Haber US$</th>' : ''}<th class="num">Debe C$</th><th class="num">Haber C$</th></tr></thead>
+        <tbody>${A.lineas.map(l => { const c = cuentaPorId(l.cuenta_id), ce = cache.centros.find(x => x.id === Number(l.centro_costo_id));
+          return `<tr><td>${esc(etiquetaCuenta(c))}</td><td>${esc(ce?.codigo || '')}</td><td>${esc(l.descripcion)}</td>
+          ${usd ? `<td class="num">${fmtZ(l.debe)}</td><td class="num">${fmtZ(l.haber)}</td>` : ''}<td class="num">${fmtZ(l.debe_c)}</td><td class="num">${fmtZ(l.haber_c)}</td></tr>`; }).join('')}
+          <tr class="total"><td colspan="3">Totales</td>${usd ? `<td class="num">${fmt(tdm)}</td><td class="num">${fmt(thm)}</td>` : ''}<td class="num">${fmt(td)}</td><td class="num">${fmt(th)}</td></tr>
+        </tbody></table></div>
+      <div class="meta">
+        <span>Elaborado: ${esc(nombrePerfil(A.creado_por))} · ${fechaHora(A.creado_en)}</span>
+        ${A.contabilizado_en ? `<span>Contabilizado: ${esc(nombrePerfil(A.contabilizado_por))} · ${fechaHora(A.contabilizado_en)}</span>` : ''}
+      </div>
+    </div>`;
+  if ($('#b-dup')) $('#b-dup').onclick = () => {
+    plantillaAsiento = { fecha: hoy(), tipo: A.tipo, moneda: A.moneda, concepto: A.concepto, referencia: '', tipo_cambio: '', estado: 'nuevo',
+      lineas: A.lineas.map(l => ({ cuenta_id: l.cuenta_id, centro_costo_id: l.centro_costo_id, descripcion: l.descripcion, debe: Number(l.debe) || '', haber: Number(l.haber) || '' })) };
+    location.hash = 'asiento/nuevo';
+  };
+  if ($('#b-anular')) $('#b-anular').onclick = () => abrirModal(
+    `<h2>Anular asiento Nº ${A.numero}</h2><p class="muted">El asiento queda registrado como anulado y deja de afectar los saldos. Esta acción no se puede deshacer.</p>
+     <label class="campo">Motivo<textarea name="motivo" rows="3" required></textarea></label>`,
+    async d => { await q(sb.rpc('anular_asiento', { p_id: A.id, p_motivo: $('[name=motivo]', d).value })); avisar('Asiento anulado'); mostrar(); },
+    { textoGuardar: 'Anular asiento' });
+}
+
+function formAsiento(m, A) {
+  const nuevo = A.estado === 'nuevo';
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>${nuevo ? 'Nuevo asiento' : 'Asiento en borrador'}</h1><p><a href="#asientos">← Volver a asientos</a></p></div>
+      <div class="acciones">
+        ${nuevo ? '' : '<button class="btn peligro" id="b-eliminar">Eliminar borrador</button>'}
+        <button class="btn sec" id="b-guardar">Guardar borrador</button>
+        <button class="btn" id="b-contab">Contabilizar</button>
+      </div></div>
+    <div class="tarjeta">
+      <div class="rejilla">
+        <label class="campo">Fecha<input type="date" id="a-fecha" value="${A.fecha}"></label>
+        <label class="campo">Tipo<select id="a-tipo">${Object.entries(TIPOS_ASIENTO).filter(([k]) => k !== 'cierre' || A.tipo === 'cierre').map(([k, v]) => `<option value="${k}" ${A.tipo === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label class="campo">Moneda<select id="a-moneda"><option value="NIO" ${A.moneda === 'NIO' ? 'selected' : ''}>Córdobas (C$)</option><option value="USD" ${A.moneda === 'USD' ? 'selected' : ''}>Dólares (US$)</option></select></label>
+        <label class="campo" id="c-tc">Tipo de cambio<input id="a-tc" inputmode="decimal" value="${A.tipo_cambio ?? ''}" placeholder="C$ por US$"><span class="muted" id="tc-nota" style="font-weight:400"></span></label>
+        <label class="campo">Referencia<input id="a-ref" value="${esc(A.referencia)}" placeholder="Factura, cheque, recibo…"></label>
+        <label class="campo ancho">Concepto<input id="a-concepto" value="${esc(A.concepto)}" placeholder="Descripción general del asiento"></label>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <div class="envoltura"><table class="lineas">
+        <thead><tr><th class="c-cuenta">Cuenta</th><th class="c-centro">Centro de costo</th><th>Descripción</th><th class="num c-monto" id="h-debe">Debe</th><th class="num c-monto" id="h-haber">Haber</th><th></th></tr></thead>
+        <tbody id="cuerpo-lineas"></tbody>
+      </table></div>
+      ${datalistCuentas('dl-cuentas', true)}
+      <div class="acciones" style="margin-top:10px"><button class="btn sec chico" id="b-linea">+ Agregar línea</button></div>
+      <div class="totales" id="totales"></div>
+    </div>`;
+
+  const usd = () => $('#a-moneda').value === 'USD';
+  const pintarLineas = () => {
+    $('#cuerpo-lineas').innerHTML = A.lineas.map((l, i) => `<tr data-i="${i}">
+      <td><input list="dl-cuentas" data-f="cuenta" value="${esc(etiquetaCuenta(cuentaPorId(l.cuenta_id)))}" placeholder="Código o nombre"></td>
+      <td><select data-f="centro_costo_id">${opcionesCentro(l.centro_costo_id)}</select></td>
+      <td><input data-f="descripcion" value="${esc(l.descripcion)}"></td>
+      <td><input class="monto" data-f="debe" inputmode="decimal" value="${l.debe ? fmt(l.debe) : ''}"></td>
+      <td><input class="monto" data-f="haber" inputmode="decimal" value="${l.haber ? fmt(l.haber) : ''}"></td>
+      <td><button class="btn sec chico" data-quitar title="Quitar línea">✕</button></td></tr>`).join('');
+    totales();
+  };
+  const totales = () => {
+    const d = r2(A.lineas.reduce((s, l) => s + (num(l.debe) || 0), 0)), h = r2(A.lineas.reduce((s, l) => s + (num(l.haber) || 0), 0));
+    const dif = r2(d - h), mon = usd() ? 'US$' : 'C$', tc = num($('#a-tc').value);
+    $('#h-debe').textContent = `Debe ${mon}`; $('#h-haber').textContent = `Haber ${mon}`;
+    $('#totales').innerHTML = `<span>Debe: <b>${mon} ${fmt(d)}</b></span><span>Haber: <b>${mon} ${fmt(h)}</b></span>
+      <span class="${dif === 0 && d > 0 ? 'dif-bien' : 'dif-mal'}">${dif === 0 && d > 0 ? 'Cuadra ✓' : 'Diferencia: ' + mon + ' ' + fmt(Math.abs(dif))}</span>
+      ${usd() && tc > 0 ? `<span class="muted">≈ C$ ${fmt(d * tc)}</span>` : ''}`;
+    return { d, h, dif };
+  };
+  const tcAuto = async () => {
+    $('#c-tc').style.display = usd() ? '' : 'none';
+    if (!usd()) return totales();
+    const r = await q(sb.from('tipos_cambio').select('tasa').eq('fecha', $('#a-fecha').value).maybeSingle()).catch(() => null);
+    $('#tc-nota').textContent = r ? `Oficial del día: ${Number(r.tasa).toFixed(4)}` : 'No hay tipo de cambio registrado para esta fecha';
+    if (r && !$('#a-tc').dataset.manual) $('#a-tc').value = Number(r.tasa).toFixed(4);
+    totales();
+  };
+  $('#a-moneda').onchange = tcAuto; $('#a-fecha').onchange = tcAuto;
+  $('#a-tc').oninput = e => { e.target.dataset.manual = '1'; totales(); };
+  if (A.tipo_cambio) $('#a-tc').dataset.manual = '1';
+
+  const cuerpo = $('#cuerpo-lineas');
+  cuerpo.addEventListener('input', e => {
+    const tr = e.target.closest('tr'), i = Number(tr.dataset.i), f = e.target.dataset.f, l = A.lineas[i];
+    if (f === 'debe' || f === 'haber') {
+      l[f] = e.target.value;
+      const otro = f === 'debe' ? 'haber' : 'debe';
+      if (e.target.value && l[otro]) { l[otro] = ''; $(`[data-f=${otro}]`, tr).value = ''; }
+      e.target.classList.toggle('invalido', isNaN(num(e.target.value)) || num(e.target.value) < 0);
+      totales();
+    } else if (f === 'descripcion') l.descripcion = e.target.value;
+  });
+  cuerpo.addEventListener('change', e => {
+    const tr = e.target.closest('tr'); if (!tr) return;
+    const i = Number(tr.dataset.i), f = e.target.dataset.f, l = A.lineas[i];
+    if (f === 'cuenta') {
+      const c = cuentaDesdeTexto(e.target.value);
+      l.cuenta_id = c?.id ?? null;
+      if (c) e.target.value = etiquetaCuenta(c);
+      e.target.classList.toggle('invalido', !!e.target.value.trim() && !c);
+      if (!c && e.target.value.trim()) avisar('Elija una cuenta de la lista que acepte movimientos', 'error');
+    } else if (f === 'centro_costo_id') l.centro_costo_id = e.target.value;
+    else if (f === 'debe' || f === 'haber') { const n = num(e.target.value); if (n && !isNaN(n)) e.target.value = fmt(n); }
+  });
+  cuerpo.addEventListener('click', e => {
+    if (!e.target.closest('[data-quitar]')) return;
+    const i = Number(e.target.closest('tr').dataset.i);
+    A.lineas.splice(i, 1); if (!A.lineas.length) A.lineas.push({});
+    pintarLineas();
+  });
+  $('#b-linea').onclick = () => {
+    const ult = A.lineas.at(-1) || {};
+    A.lineas.push({ centro_costo_id: ult.centro_costo_id || '', descripcion: '' });
+    pintarLineas();
+    $(`tr[data-i="${A.lineas.length - 1}"] [data-f=cuenta]`).focus();
+  };
+
+  const datos = () => ({
+    id: nuevo ? null : A.id, fecha: $('#a-fecha').value, tipo: $('#a-tipo').value, moneda: $('#a-moneda').value,
+    tipo_cambio: usd() ? num($('#a-tc').value) || null : null,
+    referencia: $('#a-ref').value, concepto: $('#a-concepto').value,
+    lineas: A.lineas.map(l => ({ cuenta_id: l.cuenta_id || null, centro_costo_id: l.centro_costo_id || null, descripcion: l.descripcion || '',
+      debe: num(l.debe) || 0, haber: num(l.haber) || 0 }))
+  });
+  const validar = (contab) => {
+    if (!$('#a-concepto').value.trim()) return 'Escriba el concepto del asiento';
+    if ($$('#cuerpo-lineas .invalido').length) return 'Hay campos marcados en rojo por corregir';
+    const conMonto = A.lineas.filter(l => num(l.debe) || num(l.haber));
+    if (conMonto.some(l => !l.cuenta_id)) return 'Hay líneas con monto pero sin cuenta';
+    if (contab) {
+      const t = totales();
+      if (conMonto.length < 2) return 'El asiento necesita al menos dos líneas';
+      if (t.dif !== 0) return 'El asiento no cuadra: revise Debe y Haber';
+      if (usd() && !(num($('#a-tc').value) > 0)) return 'Falta el tipo de cambio';
+    }
+    return null;
+  };
+  const guardar = async (contab, boton) => {
+    const err = validar(contab); if (err) return avisar(err, 'error');
+    if (contab && !confirm('Al contabilizar, el asiento ya no se podrá editar (solo anular). ¿Continuar?')) return;
+    boton.disabled = true;
+    try {
+      const id = await q(sb.rpc('guardar_asiento', { p: datos(), p_contabilizar: contab }));
+      avisar(contab ? 'Asiento contabilizado' : 'Borrador guardado');
+      if (location.hash === `#asiento/${id}`) mostrar(); else location.hash = `asiento/${id}`;
+    } catch (e) { fallo(e); } finally { boton.disabled = false; }
+  };
+  $('#b-guardar').onclick = e => guardar(false, e.currentTarget);
+  $('#b-contab').onclick = e => guardar(true, e.currentTarget);
+  if ($('#b-eliminar')) $('#b-eliminar').onclick = async () => {
+    if (!confirm('¿Eliminar este borrador?')) return;
+    try { await q(sb.rpc('eliminar_borrador', { p_id: A.id })); avisar('Borrador eliminado'); location.hash = 'asientos'; } catch (e) { fallo(e); }
+  };
+  pintarLineas(); tcAuto();
+}
+
+// ============================================================
+// Catálogo de cuentas
+// ============================================================
+async function vCatalogo(m) {
+  await cargarCatalogos();
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Catálogo de cuentas</h1><p>${cache.cuentas.length} cuentas. Las de agrupación suman a sus subcuentas.</p></div>
+      <div class="acciones">${editor() ? '<button class="btn" id="b-nueva">+ Nueva cuenta</button>' : ''}<button class="btn sec" id="b-csv">Exportar CSV</button></div></div>
+    <div class="tarjeta">
+      <div class="filtros"><label class="campo" style="flex:1">Buscar<input id="buscar" placeholder="Código o nombre"></label></div>
+      <div class="envoltura"><table>
+        <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Naturaleza</th><th>Uso</th><th></th></tr></thead>
+        <tbody id="t-cuentas">${cache.cuentas.map(c => `<tr class="${c.acepta_movimientos ? '' : 'grupo'} ${editor() ? 'clic' : ''}" data-id="${c.id}" data-txt="${esc((c.codigo + ' ' + c.nombre).toLowerCase())}">
+          <td>${esc(c.codigo)}</td><td><span class="ind" style="padding-left:${(c.nivel - 1) * 18}px">${esc(c.nombre)}</span></td>
+          <td>${TIPOS_CUENTA[c.tipo]}</td><td>${c.naturaleza === 'deudora' ? 'Deudora' : 'Acreedora'}</td>
+          <td>${c.acepta_movimientos ? 'Movimientos' : '<span class="muted">Agrupación</span>'}</td>
+          <td>${c.activa ? '' : '<span class="etiqueta e-anulado">Inactiva</span>'}</td></tr>`).join('')}</tbody></table></div>
+    </div>`;
+  $('#buscar').oninput = e => { const t = e.target.value.toLowerCase(); $$('#t-cuentas tr').forEach(tr => tr.style.display = tr.dataset.txt.includes(t) ? '' : 'none'); };
+  $('#b-csv').onclick = () => csv('catalogo_cuentas.csv', [['Codigo','Nombre','Tipo','Naturaleza','Acepta movimientos','Activa'],
+    ...cache.cuentas.map(c => [c.codigo, c.nombre, c.tipo, c.naturaleza, c.acepta_movimientos ? 'Si' : 'No', c.activa ? 'Si' : 'No'])]);
+  if (!editor()) return;
+  $('#b-nueva').onclick = () => modalCuenta(m);
+  $('#t-cuentas').onclick = e => { const tr = e.target.closest('tr'); if (tr) modalCuenta(m, cuentaPorId(tr.dataset.id)); };
+}
+function modalCuenta(m, c = null) {
+  const sel = (n, op, v) => `<select name="${n}">${Object.entries(op).map(([k, t]) => `<option value="${k}" ${v === k ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+  const d = abrirModal(`<h2>${c ? 'Editar cuenta' : 'Nueva cuenta'}</h2>
+    <p class="muted" style="font-size:13px">El código define la jerarquía: 6.1.07 queda dentro de 6.1. La cuenta padre debe existir.</p>
+    <div class="rejilla">
+      <label class="campo">Código<input name="codigo" value="${esc(c?.codigo || '')}" pattern="[0-9]+(\\.[0-9]+)*" required placeholder="6.1.07"></label>
+      <label class="campo">Tipo${sel('tipo', TIPOS_CUENTA, c?.tipo || 'gasto')}</label>
+      <label class="campo ancho">Nombre<input name="nombre" value="${esc(c?.nombre || '')}" required></label>
+      <label class="campo">Naturaleza${sel('naturaleza', { deudora: 'Deudora', acreedora: 'Acreedora' }, c?.naturaleza || 'deudora')}</label>
+      <label class="campo chk"><input type="checkbox" name="acepta_movimientos" ${!c || c.acepta_movimientos ? 'checked' : ''}> Acepta movimientos</label>
+      <label class="campo chk"><input type="checkbox" name="activa" ${!c || c.activa ? 'checked' : ''}> Activa</label>
+    </div>`,
+    async d => {
+      const f = new FormData($('form', d));
+      const v = { codigo: String(f.get('codigo')).trim(), nombre: String(f.get('nombre')).trim(), tipo: f.get('tipo'), naturaleza: f.get('naturaleza'),
+        acepta_movimientos: f.get('acepta_movimientos') === 'on', activa: f.get('activa') === 'on' };
+      if (c) await q(sb.from('cuentas').update(v).eq('id', c.id)); else await q(sb.from('cuentas').insert(v));
+      avisar('Cuenta guardada'); vCatalogo(m);
+    },
+    { extraIzq: c ? '<button type="button" class="btn peligro" id="b-borrar">Eliminar</button>' : '' });
+  const codigo = $('[name=codigo]', d);
+  codigo.addEventListener('input', () => {
+    const padre = cache.cuentas.find(x => x.codigo === codigo.value.replace(/\.[0-9]+$/, '') && codigo.value.includes('.'));
+    if (padre && !c) { $('[name=tipo]', d).value = padre.tipo; $('[name=naturaleza]', d).value = padre.naturaleza; }
+  });
+  $('[name=tipo]', d).addEventListener('change', e => { if (!c) $('[name=naturaleza]', d).value = ['activo', 'costo', 'gasto'].includes(e.target.value) ? 'deudora' : 'acreedora'; });
+  if (c) $('#b-borrar', d).onclick = async () => {
+    if (!confirm(`¿Eliminar la cuenta ${c.codigo}?`)) return;
+    try { await q(sb.from('cuentas').delete().eq('id', c.id)); d.close(); avisar('Cuenta eliminada'); vCatalogo(m); } catch (e) { fallo(e); }
+  };
+}
+
+// ============================================================
+// Centros de costo
+// ============================================================
+async function vCentros(m) {
+  await cargarCatalogos();
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Centros de costo</h1><p>Para ver resultados por programa, proyecto o área.</p></div>
+      ${editor() ? '<button class="btn" id="b-nuevo">+ Nuevo centro</button>' : ''}</div>
+    <div class="tarjeta"><div class="envoltura"><table>
+      <thead><tr><th>Código</th><th>Nombre</th><th>Estado</th></tr></thead>
+      <tbody id="t-centros">${cache.centros.map(c => `<tr class="${editor() ? 'clic' : ''}" data-id="${c.id}"><td>${esc(c.codigo)}</td><td>${esc(c.nombre)}</td>
+        <td>${c.activo ? 'Activo' : '<span class="etiqueta e-anulado">Inactivo</span>'}</td></tr>`).join('') || '<tr><td colspan="3" class="vacio">Sin centros de costo</td></tr>'}</tbody>
+    </table></div></div>`;
+  if (!editor()) return;
+  const modal = (c = null) => {
+    const d = abrirModal(`<h2>${c ? 'Editar' : 'Nuevo'} centro de costo</h2><div class="rejilla">
+      <label class="campo">Código<input name="codigo" value="${esc(c?.codigo || '')}" required></label>
+      <label class="campo ancho">Nombre<input name="nombre" value="${esc(c?.nombre || '')}" required></label>
+      <label class="campo chk"><input type="checkbox" name="activo" ${!c || c.activo ? 'checked' : ''}> Activo</label></div>`,
+      async d => {
+        const f = new FormData($('form', d));
+        const v = { codigo: String(f.get('codigo')).trim(), nombre: String(f.get('nombre')).trim(), activo: f.get('activo') === 'on' };
+        if (c) await q(sb.from('centros_costo').update(v).eq('id', c.id)); else await q(sb.from('centros_costo').insert(v));
+        avisar('Centro de costo guardado'); vCentros(m);
+      }, { extraIzq: c ? '<button type="button" class="btn peligro" id="b-borrar">Eliminar</button>' : '' });
+    if (c) $('#b-borrar', d).onclick = async () => {
+      if (!confirm('¿Eliminar este centro de costo?')) return;
+      try { await q(sb.from('centros_costo').delete().eq('id', c.id)); d.close(); avisar('Eliminado'); vCentros(m); } catch (e) { fallo(e); }
+    };
+  };
+  $('#b-nuevo').onclick = () => modal();
+  $('#t-centros').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (tr) modal(cache.centros.find(c => c.id === Number(tr.dataset.id))); };
+}
+
+// ============================================================
+// Tipos de cambio
+// ============================================================
+async function vTiposCambio(m) {
+  const filas = await q(sb.from('tipos_cambio').select('*').order('fecha', { ascending: false }).limit(120));
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Tipos de cambio</h1><p>Córdobas por cada dólar, según el tipo de cambio oficial del Banco Central de Nicaragua.</p></div>
+      ${editor() ? '<button class="btn sec" id="b-importar">Pegar varios días</button>' : ''}</div>
+    ${editor() ? `<div class="tarjeta"><form class="filtros" id="f-tc" style="margin:0">
+      <label class="campo">Fecha<input type="date" name="fecha" value="${hoy()}" required></label>
+      <label class="campo">C$ por US$ 1<input name="tasa" inputmode="decimal" required placeholder="36.6243"></label>
+      <button class="btn">Guardar</button></form></div>` : ''}
+    <div class="tarjeta"><div class="envoltura"><table>
+      <thead><tr><th>Fecha</th><th class="num">C$ por US$</th><th></th></tr></thead>
+      <tbody>${filas.map(t => `<tr><td>${fecha(t.fecha)}</td><td class="num">${Number(t.tasa).toFixed(4)}</td>
+        <td class="num">${editor() ? `<button class="btn sec chico" data-borrar="${t.fecha}">Eliminar</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="3" class="vacio">Sin registros</td></tr>'}</tbody>
+    </table></div></div>`;
+  if (!editor()) return;
+  $('#f-tc').onsubmit = async e => {
+    e.preventDefault(); const f = new FormData(e.target);
+    try { await q(sb.from('tipos_cambio').upsert({ fecha: f.get('fecha'), tasa: num(f.get('tasa')) })); avisar('Tipo de cambio guardado'); vTiposCambio(m); } catch (err) { fallo(err); }
+  };
+  $$('[data-borrar]').forEach(b => b.onclick = async () => {
+    if (!confirm('¿Eliminar este tipo de cambio?')) return;
+    try { await q(sb.from('tipos_cambio').delete().eq('fecha', b.dataset.borrar)); vTiposCambio(m); } catch (e) { fallo(e); }
+  });
+  $('#b-importar').onclick = () => abrirModal(`<h2>Pegar tipos de cambio</h2>
+    <p class="muted" style="font-size:13px">Una línea por día: fecha y tasa, separadas por espacio, tabulación o punto y coma. Sirve copiar dos columnas de Excel.<br>Ej.: <code>01/11/2026 36.6243</code></p>
+    <textarea name="texto" rows="10" style="width:100%" required></textarea>`,
+    async d => {
+      const filas = [], malas = [];
+      $('[name=texto]', d).value.split(/\r?\n/).map(s => s.trim()).filter(Boolean).forEach(s => {
+        const r = s.match(/^(\S+)[\s;,]+([0-9]+[.,][0-9]+)$/);
+        let f = r?.[1];
+        if (f && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(f)) { const [dd, mm, yy] = f.split('/'); f = `${yy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`; }
+        if (r && /^\d{4}-\d{2}-\d{2}$/.test(f)) filas.push({ fecha: f, tasa: Number(r[2].replace(',', '.')) }); else malas.push(s);
+      });
+      if (malas.length) { avisar(`No se entendieron ${malas.length} línea(s), por ejemplo: ${malas[0]}`, 'error'); return false; }
+      await q(sb.from('tipos_cambio').upsert(filas));
+      avisar(`${filas.length} tipos de cambio guardados`); vTiposCambio(m);
+    }, { textoGuardar: 'Importar' });
+}
+
+// ============================================================
+// Libro mayor
+// ============================================================
+let paramMayor = null;
+async function vMayor(m, arg) {
+  if (!paramMayor) { const [d, h] = rangoMes(); paramMayor = { cuenta: '', desde: d.slice(0, 4) + '-01-01', hasta: h, centro: '' }; }
+  if (arg) paramMayor.cuenta = Number(arg);
+  const p = paramMayor;
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Libro mayor</h1><p>Movimientos y saldo acumulado de una cuenta</p></div>
+      <div class="acciones no-imprimir"><button class="btn sec" id="b-csv" disabled>Exportar CSV</button><button class="btn sec" onclick="print()">Imprimir</button></div></div>
+    <div class="tarjeta">
+      <form class="filtros" id="f-mayor">
+        <label class="campo" style="flex:1;min-width:260px">Cuenta<input name="cuenta" list="dl-todas" value="${esc(etiquetaCuenta(cuentaPorId(p.cuenta)))}" required placeholder="Código o nombre"></label>
+        <label class="campo">Desde<input type="date" name="desde" value="${p.desde}"></label>
+        <label class="campo">Hasta<input type="date" name="hasta" value="${p.hasta}"></label>
+        <label class="campo">Centro<select name="centro">${opcionesCentro(p.centro, true)}</select></label>
+        <button class="btn">Consultar</button>
+      </form>${datalistCuentas('dl-todas', false)}
+      <div id="res"></div>
+    </div>`;
+  $('#f-mayor').onsubmit = e => {
+    e.preventDefault(); const f = new FormData(e.target);
+    const c = cuentaDesdeTexto(f.get('cuenta'), false);
+    if (!c) return avisar('Elija una cuenta de la lista', 'error');
+    Object.assign(paramMayor, { cuenta: c.id, desde: f.get('desde'), hasta: f.get('hasta'), centro: f.get('centro') });
+    consultar();
+  };
+  const consultar = async () => {
+    const c = cuentaPorId(p.cuenta); if (!c) return;
+    $('#res').innerHTML = '<div class="cargando">Cargando…</div>';
+    try {
+      const filas = await q(sb.rpc('libro_mayor', { p_cuenta: c.id, p_desde: p.desde, p_hasta: p.hasta, p_centro: p.centro ? Number(p.centro) : null }));
+      const varias = !c.acepta_movimientos;
+      const td = filas.reduce((s, f) => s + Number(f.debe || 0), 0), th = filas.reduce((s, f) => s + Number(f.haber || 0), 0);
+      $('#res').innerHTML = `<div class="reporte-titulo"><h2>${esc(etiquetaCuenta(c))}</h2><div class="muted">Del ${fecha(p.desde)} al ${fecha(p.hasta)} · Saldo ${c.naturaleza} · C$</div></div>
+        <div class="envoltura"><table><thead><tr><th>Fecha</th><th>Nº</th><th>Concepto</th>${varias ? '<th>Cuenta</th>' : ''}<th>Descripción</th><th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th></tr></thead>
+        <tbody>${filas.map(f => `<tr class="${f.asiento_id ? 'clic' : 'grupo'}" ${f.asiento_id ? `onclick="location.hash='asiento/${f.asiento_id}'"` : ''}>
+          <td>${fecha(f.fecha)}</td><td>${f.numero ?? ''}</td><td>${esc(f.concepto)}</td>${varias ? `<td>${esc(f.cuenta)}</td>` : ''}<td>${esc(f.descripcion)}</td>
+          <td class="num">${f.asiento_id ? fmtZ(f.debe) : ''}</td><td class="num">${f.asiento_id ? fmtZ(f.haber) : ''}</td><td class="num">${fmt(f.saldo)}</td></tr>`).join('')}
+          <tr class="total"><td colspan="${varias ? 5 : 4}">Totales del período</td><td class="num">${fmt(td)}</td><td class="num">${fmt(th)}</td><td class="num">${fmt(filas.at(-1)?.saldo)}</td></tr>
+        </tbody></table></div>`;
+      $('#b-csv').disabled = false;
+      $('#b-csv').onclick = () => csv(`mayor_${c.codigo}_${p.desde}_${p.hasta}.csv`, [['Fecha','Numero','Concepto','Cuenta','Descripcion','Debe','Haber','Saldo'],
+        ...filas.map(f => [f.fecha, f.numero ?? '', f.concepto, f.cuenta ?? '', f.descripcion ?? '', f.debe ?? '', f.haber ?? '', f.saldo])]);
+    } catch (e) { $('#res').innerHTML = `<div class="aviso error">${esc(mensajeError(e))}</div>`; }
+  };
+  if (p.cuenta) consultar(); else $('#res').innerHTML = '<div class="vacio">Elija una cuenta y presione Consultar.</div>';
+}
+
+// ============================================================
+// Balanza de comprobación
+// ============================================================
+let paramBalanza = null;
+async function vBalanza(m) {
+  if (!paramBalanza) { const [d, h] = rangoMes(); paramBalanza = { desde: d, hasta: h, centro: '', nivel: '9', ceros: true }; }
+  const p = paramBalanza;
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Balanza de comprobación</h1><p>Saldos por cuenta en córdobas</p></div>
+      <div class="acciones no-imprimir"><button class="btn sec" id="b-csv">Exportar CSV</button><button class="btn sec" onclick="print()">Imprimir</button></div></div>
+    <div class="tarjeta">
+      <form class="filtros" id="f-bal">
+        <label class="campo">Desde<input type="date" name="desde" value="${p.desde}"></label>
+        <label class="campo">Hasta<input type="date" name="hasta" value="${p.hasta}"></label>
+        <label class="campo">Centro<select name="centro">${opcionesCentro(p.centro, true)}</select></label>
+        <label class="campo">Nivel<select name="nivel">${[1, 2, 3, 4, 5].map(n => `<option value="${n}" ${p.nivel == n ? 'selected' : ''}>Hasta nivel ${n}</option>`).join('')}<option value="9" ${p.nivel == 9 ? 'selected' : ''}>Todos</option></select></label>
+        <label class="campo chk"><input type="checkbox" name="ceros" ${p.ceros ? 'checked' : ''}> Ocultar cuentas sin saldo</label>
+        <button class="btn">Consultar</button>
+      </form>
+      <div id="res"><div class="cargando">Cargando…</div></div>
+    </div>`;
+  $('#f-bal').onsubmit = e => { e.preventDefault(); const f = new FormData(e.target); Object.assign(paramBalanza, { desde: f.get('desde'), hasta: f.get('hasta'), centro: f.get('centro'), nivel: f.get('nivel'), ceros: f.get('ceros') === 'on' }); vBalanza(m); };
+  const bal = await q(sb.rpc('balanza', { p_desde: p.desde, p_hasta: p.hasta, p_centro: p.centro ? Number(p.centro) : null }));
+  const vacia = x => !Number(x.saldo_inicial) && !Number(x.debe) && !Number(x.haber) && !Number(x.saldo_final);
+  const filas = bal.filter(x => x.nivel <= Number(p.nivel) && !(p.ceros && vacia(x)));
+  const hojas = bal.filter(x => x.acepta_movimientos);
+  const td = r2(hojas.reduce((s, x) => s + Number(x.debe), 0)), th = r2(hojas.reduce((s, x) => s + Number(x.haber), 0));
+  $('#res').innerHTML = `<div class="reporte-titulo"><img src="logo.png" alt="Amigos for Christ"><h2>Balanza de comprobación</h2>
+      <div class="muted">Del ${fecha(p.desde)} al ${fecha(p.hasta)}${p.centro ? ' · ' + esc(cache.centros.find(c => c.id === Number(p.centro))?.nombre) : ''} · Cifras en C$</div></div>
+    ${td === th ? '' : `<div class="aviso error">La balanza no cuadra: Debe ${fmt(td)} y Haber ${fmt(th)}.</div>`}
+    <div class="envoltura"><table>
+      <thead><tr><th>Código</th><th>Cuenta</th><th class="num">Saldo inicial</th><th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo final</th></tr></thead>
+      <tbody>${filas.map(x => `<tr class="clic ${x.acepta_movimientos ? '' : 'grupo'}" data-id="${x.cuenta_id}">
+        <td>${esc(x.codigo)}</td><td><span class="ind" style="padding-left:${(x.nivel - 1) * 16}px">${esc(x.nombre)}</span></td>
+        <td class="num">${fmtZ(x.saldo_inicial)}</td><td class="num">${fmtZ(x.debe)}</td><td class="num">${fmtZ(x.haber)}</td><td class="num">${fmtZ(x.saldo_final)}</td></tr>`).join('') || '<tr><td colspan="6" class="vacio">Sin movimientos en el período</td></tr>'}
+        <tr class="total"><td colspan="3">Total movimientos ${td === th ? '<span class="dif-bien">· Cuadra ✓</span>' : ''}</td><td class="num">${fmt(td)}</td><td class="num">${fmt(th)}</td><td></td></tr>
+      </tbody></table></div>`;
+  $('#res tbody').onclick = e => { const tr = e.target.closest('tr[data-id]'); if (!tr) return; paramMayor = { cuenta: Number(tr.dataset.id), desde: p.desde, hasta: p.hasta, centro: p.centro }; location.hash = 'mayor'; };
+  $('#b-csv').onclick = () => csv(`balanza_${p.desde}_${p.hasta}.csv`, [['Codigo','Cuenta','Nivel','Saldo inicial','Debe','Haber','Saldo final'],
+    ...filas.map(x => [x.codigo, x.nombre, x.nivel, x.saldo_inicial, x.debe, x.haber, x.saldo_final])]);
+}
+
+// ============================================================
+// Estados financieros
+// ============================================================
+let paramEstados = null;
+async function vEstados(m, arg) {
+  const pest = arg === 'balance' ? 'balance' : 'resultados';
+  if (!paramEstados) { const [d, h] = rangoMes(); paramEstados = { desde: d.slice(0, 4) + '-01-01', hasta: h, al: h, centro: '', nivel: '3' }; }
+  const p = paramEstados;
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Estados financieros</h1><p>Cifras en córdobas</p></div>
+      <div class="acciones no-imprimir"><button class="btn sec" id="b-csv">Exportar CSV</button><button class="btn sec" onclick="print()">Imprimir</button></div></div>
+    <div class="pestanas"><a href="#estados/resultados" class="${pest === 'resultados' ? 'activo' : ''}">Estado de resultados</a><a href="#estados/balance" class="${pest === 'balance' ? 'activo' : ''}">Balance general</a></div>
+    <div class="tarjeta">
+      <form class="filtros" id="f-est">
+        ${pest === 'resultados'
+          ? `<label class="campo">Desde<input type="date" name="desde" value="${p.desde}"></label><label class="campo">Hasta<input type="date" name="hasta" value="${p.hasta}"></label>
+             <label class="campo">Centro<select name="centro">${opcionesCentro(p.centro, true)}</select></label>`
+          : `<label class="campo">Al<input type="date" name="al" value="${p.al}"></label>`}
+        <label class="campo">Detalle<select name="nivel">${[2, 3, 4].map(n => `<option value="${n}" ${p.nivel == n ? 'selected' : ''}>Hasta nivel ${n}</option>`).join('')}<option value="9" ${p.nivel == 9 ? 'selected' : ''}>Todo</option></select></label>
+        <button class="btn">Consultar</button>
+      </form>
+      <div id="res"><div class="cargando">Cargando…</div></div>
+    </div>`;
+  $('#f-est').onsubmit = e => { e.preventDefault(); Object.assign(paramEstados, Object.fromEntries(new FormData(e.target))); vEstados(m, pest); };
+
+  const filasCsv = [];
+  const fila = (x, valor, clase = '') => { filasCsv.push([x.codigo, x.nombre, r2(valor)]);
+    return `<tr class="${clase || (x.acepta_movimientos ? '' : 'grupo')}"><td><span class="ind" style="padding-left:${Math.max(0, x.nivel - 2) * 16}px">${esc(x.nombre)}</span></td><td class="num">${fmt(valor)}</td></tr>`; };
+  const total = (txt, v) => { filasCsv.push(['', txt, r2(v)]); return `<tr class="total"><td>${esc(txt)}</td><td class="num">${fmt(v)}</td></tr>`; };
+  const encabezado = (txt) => `<tr><td colspan="2" style="padding-top:18px;border:none"><h3>${esc(txt)}</h3></td></tr>`;
+  // El primer nivel ya es el título y el total de cada sección; se listan sus subcuentas.
+  const seccion = (bal, tipo, val) => bal.filter(x => x.tipo === tipo && x.nivel <= Number(p.nivel) && (x.nivel > 1 || x.acepta_movimientos) && val(x) !== 0).map(x => fila(x, val(x))).join('');
+  const raiz = (bal, tipo, val) => bal.filter(x => x.tipo === tipo && x.nivel === 1).reduce((s, x) => s + val(x), 0);
+  let html;
+
+  if (pest === 'resultados') {
+    const bal = await q(sb.rpc('balanza', { p_desde: p.desde, p_hasta: p.hasta, p_centro: p.centro ? Number(p.centro) : null }));
+    const mov = x => r2(Number(x.saldo_final) - Number(x.saldo_inicial));
+    const ing = raiz(bal, 'ingreso', mov), cos = raiz(bal, 'costo', mov), gas = raiz(bal, 'gasto', mov);
+    html = `<div class="reporte-titulo"><img src="logo.png" alt="Amigos for Christ"><h2>Estado de resultados</h2>
+      <div class="muted">Del ${fecha(p.desde)} al ${fecha(p.hasta)}${p.centro ? ' · ' + esc(cache.centros.find(c => c.id === Number(p.centro))?.nombre) : ''} · Cifras en C$</div></div>
+      <div class="envoltura"><table><tbody>
+      ${encabezado('Ingresos')}${seccion(bal, 'ingreso', mov)}${total('Total ingresos', ing)}
+      ${cos ? encabezado('Costos') + seccion(bal, 'costo', mov) + total('Total costos', cos) + total('Resultado bruto', ing - cos) : ''}
+      ${encabezado('Gastos')}${seccion(bal, 'gasto', mov)}${total('Total gastos', gas)}
+      <tr><td colspan="2" style="border:none;height:8px"></td></tr>
+      ${total(ing - cos - gas >= 0 ? 'Excedente (utilidad) del período' : 'Déficit (pérdida) del período', ing - cos - gas)}
+      </tbody></table></div>`;
+  } else {
+    const bal = await q(sb.rpc('balanza', { p_desde: '1900-01-01', p_hasta: p.al }));
+    const sal = x => r2(Number(x.saldo_final));
+    const act = raiz(bal, 'activo', sal), pas = raiz(bal, 'pasivo', sal), pat = raiz(bal, 'patrimonio', sal);
+    const res = raiz(bal, 'ingreso', sal) - raiz(bal, 'costo', sal) - raiz(bal, 'gasto', sal);
+    const dif = r2(act - (pas + pat + res));
+    html = `<div class="reporte-titulo"><img src="logo.png" alt="Amigos for Christ"><h2>Balance general</h2><div class="muted">Al ${fecha(p.al)} · Cifras en C$</div></div>
+      ${dif ? `<div class="aviso error">El balance no cuadra por C$ ${fmt(dif)}. Revise la balanza de comprobación.</div>` : ''}
+      <div class="envoltura"><table><tbody>
+      ${encabezado('Activo')}${seccion(bal, 'activo', sal)}${total('Total activo', act)}
+      ${encabezado('Pasivo')}${seccion(bal, 'pasivo', sal)}${total('Total pasivo', pas)}
+      ${encabezado('Patrimonio')}${seccion(bal, 'patrimonio', sal)}
+      ${res ? fila({ codigo: '', nombre: 'Resultado del ejercicio (sin cerrar)', nivel: 2, acepta_movimientos: true }, res) : ''}
+      ${total('Total patrimonio', pat + res)}
+      <tr><td colspan="2" style="border:none;height:8px"></td></tr>
+      ${total('Total pasivo y patrimonio', pas + pat + res)}
+      </tbody></table></div>`;
+  }
+  $('#res').innerHTML = html;
+  $('#b-csv').onclick = () => csv(`${pest === 'balance' ? 'balance_general_' + p.al : 'estado_resultados_' + p.desde + '_' + p.hasta}.csv`, [['Codigo','Concepto','Monto C$'], ...filasCsv]);
+}
+
+// ============================================================
+// Períodos y cierre anual
+// ============================================================
+async function vPeriodos(m) {
+  const per = await q(sb.from('periodos').select('*').order('anio', { ascending: false }).order('mes', { ascending: false }));
+  const patrimonio = cache.cuentas.filter(c => c.tipo === 'patrimonio' && c.acepta_movimientos && c.activa);
+  const anio = Number(hoy().slice(0, 4));
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Períodos y cierre</h1><p>Un mes cerrado no acepta asientos nuevos, cambios ni anulaciones.</p></div></div>
+    <div class="tarjeta"><div class="envoltura"><table>
+      <thead><tr><th>Período</th><th>Estado</th><th>Cerrado por</th><th></th></tr></thead>
+      <tbody>${per.map(x => `<tr><td>${MESES[x.mes - 1]} ${x.anio}</td><td><span class="etiqueta e-${x.estado}">${x.estado}</span></td>
+        <td class="muted">${x.cerrado_en ? esc(nombrePerfil(x.cerrado_por)) + ' · ' + fechaHora(x.cerrado_en) : ''}</td>
+        <td class="num">${admin() ? `<button class="btn ${x.estado === 'abierto' ? 'navy' : 'sec'} chico" data-anio="${x.anio}" data-mes="${x.mes}" data-acc="${x.estado === 'abierto' ? 'cerrar' : 'abrir'}">${x.estado === 'abierto' ? 'Cerrar' : 'Reabrir'}</button>` : ''}</td></tr>`).join('')
+        || '<tr><td colspan="4" class="vacio">Los períodos se crean solos al registrar el primer asiento de cada mes.</td></tr>'}</tbody>
+    </table></div></div>
+    ${editor() ? `<div class="tarjeta"><h2>Cierre del ejercicio</h2>
+      <p class="muted">Genera en borrador, al 31 de diciembre, el asiento que lleva a cero ingresos, costos y gastos del año y pasa el resultado a la cuenta de patrimonio elegida. Revíselo y contabilícelo como cualquier asiento.</p>
+      <form class="filtros" id="f-cierre" style="margin:0">
+        <label class="campo">Año<input type="number" name="anio" value="${anio}" min="2000" max="2100" required></label>
+        <label class="campo" style="min-width:260px">Cuenta de patrimonio destino<select name="cuenta" required>${patrimonio.map(c => `<option value="${c.id}" ${/acumulad/i.test(c.nombre) ? 'selected' : ''}>${esc(etiquetaCuenta(c))}</option>`).join('')}</select></label>
+        <button class="btn">Generar asiento de cierre</button>
+      </form></div>` : ''}`;
+  $$('[data-acc]').forEach(b => b.onclick = async () => {
+    const a = Number(b.dataset.anio), mm = Number(b.dataset.mes), cerrar = b.dataset.acc === 'cerrar';
+    if (!confirm(`¿${cerrar ? 'Cerrar' : 'Reabrir'} ${MESES[mm - 1]} ${a}?`)) return;
+    try { await q(sb.rpc(cerrar ? 'cerrar_periodo' : 'abrir_periodo', { p_anio: a, p_mes: mm })); avisar(cerrar ? 'Período cerrado' : 'Período reabierto'); vPeriodos(m); } catch (e) { fallo(e); }
+  });
+  if ($('#f-cierre')) $('#f-cierre').onsubmit = async e => {
+    e.preventDefault(); const f = new FormData(e.target);
+    try { const id = await q(sb.rpc('generar_asiento_cierre', { p_anio: Number(f.get('anio')), p_cuenta_destino: Number(f.get('cuenta')) }));
+      avisar('Asiento de cierre generado en borrador'); location.hash = 'asiento/' + id; } catch (err) { fallo(err); }
+  };
+}
+
+// ============================================================
+// Usuarios y bitácora (solo administrador)
+// ============================================================
+async function vUsuarios(m) {
+  if (!admin()) { m.innerHTML = '<div class="aviso error">Solo el administrador ve esta sección.</div>'; return; }
+  await cargarCatalogos();
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Usuarios</h1><p>Quien se registra entra como Consulta; aquí se le asigna su rol.</p></div></div>
+    <div class="tarjeta"><div class="envoltura"><table>
+      <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Desde</th></tr></thead>
+      <tbody>${cache.perfiles.map(u => `<tr><td>${esc(u.nombre)}</td><td>${esc(u.correo)}</td>
+        <td><select data-id="${u.id}">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${u.rol === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td class="muted">${fecha(u.creado_en)}</td></tr>`).join('')}</tbody>
+    </table></div>
+    <p class="muted" style="font-size:13px"><b>Administrador:</b> todo, incluye cerrar períodos y asignar roles. <b>Contador:</b> catálogo, tipos de cambio y asientos. <b>Consulta:</b> solo lectura.</p></div>`;
+  $$('select[data-id]').forEach(s => s.onchange = async () => {
+    try { await q(sb.rpc('cambiar_rol', { p_usuario: s.dataset.id, p_rol: s.value })); avisar('Rol actualizado'); } catch (e) { fallo(e); vUsuarios(m); }
+  });
+}
+
+async function vBitacora(m) {
+  if (!admin()) { m.innerHTML = '<div class="aviso error">Solo el administrador ve esta sección.</div>'; return; }
+  const filas = await q(sb.from('bitacora').select('*').order('fecha', { ascending: false }).limit(300));
+  const OPS = { INSERT: 'Creó', UPDATE: 'Modificó', DELETE: 'Eliminó' };
+  const TABLAS = { cuentas: 'Cuenta', centros_costo: 'Centro de costo', tipos_cambio: 'Tipo de cambio', periodos: 'Período', asientos: 'Asiento', perfiles: 'Usuario' };
+  const cambios = (a, d) => {
+    if (!a || !d) return JSON.stringify(a || d, null, 1);
+    return Object.keys(d).filter(k => JSON.stringify(a[k]) !== JSON.stringify(d[k])).map(k => `${k}: ${JSON.stringify(a[k])} → ${JSON.stringify(d[k])}`).join('\n');
+  };
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Bitácora</h1><p>Últimos 300 cambios: quién cambió qué y cuándo.</p></div></div>
+    <div class="tarjeta"><div class="envoltura"><table>
+      <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Registro</th><th>Detalle</th></tr></thead>
+      <tbody>${filas.map(b => `<tr><td style="white-space:nowrap">${fechaHora(b.fecha)}</td><td>${esc(nombrePerfil(b.usuario) || 'Sistema')}</td>
+        <td>${OPS[b.operacion] || b.operacion} ${TABLAS[b.tabla] || b.tabla}</td><td>${esc(b.registro)}</td>
+        <td><details><summary>Ver</summary><pre>${esc(cambios(b.datos_antes, b.datos_despues))}</pre></details></td></tr>`).join('') || '<tr><td colspan="5" class="vacio">Sin registros</td></tr>'}</tbody>
+    </table></div></div>`;
+}
+
+iniciar();
+</script>
+</body>
+</html>
