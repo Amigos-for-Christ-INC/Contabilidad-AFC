@@ -2940,7 +2940,7 @@ async function vConfigPlanilla(m) {
       <ol style="margin:0 0 12px;padding-left:20px;line-height:1.7">
         <li>Cree una clave aquí y cópiela; solo se muestra una vez.</li>
         <li>En el proyecto de Apps Script del marcaje agregue el archivo <code>PuenteContabilidad.gs</code> (está en la carpeta <code>integracion</code> del repositorio de Contabilidad AFC).</li>
-        <li>En Configuración del proyecto → Propiedades del script agregue <code>AFC_URL</code> = <code>${esc(urlApi)}</code>, <code>AFC_ANON</code> = la clave pública de la app y <code>AFC_CLAVE</code> = la clave creada.</li>
+        <li>En Configuración del proyecto → Propiedades del script agregue <code>AFC_ANON</code> = <code>${esc(CONFIG.anonKey)}</code> (la clave pública de la app) y <code>AFC_CLAVE</code> = la clave creada.</li>
         <li>Ejecute <code>enviarAContabilidad</code> una vez para autorizar y <code>activarEnvioDiario</code> para dejarlo automático.</li></ol>
       <div class="acciones" style="margin-bottom:12px"><button class="btn" id="b-clave">+ Crear clave</button></div>
       ${claves.length ? `<table><thead><tr><th>Nombre</th><th>Creada</th><th>Último envío</th><th>Resultado</th><th></th></tr></thead><tbody>

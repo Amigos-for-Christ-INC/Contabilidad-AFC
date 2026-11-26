@@ -62,7 +62,7 @@ App web de contabilidad, cheques, inventario y planilla para Amigos for Christ s
 
 ### Conexión con la app de marcaje
 1. En *Configuración de planilla → Conexión con la app de marcaje*, cree una clave (se muestra una sola vez).
-2. En el Apps Script del marcaje agregue `integracion/PuenteContabilidad.gs` y las propiedades `AFC_URL`, `AFC_ANON` y `AFC_CLAVE`.
+2. En el Apps Script del marcaje agregue `integracion/PuenteContabilidad.gs` y las propiedades `AFC_ANON` (clave pública de la app) y `AFC_CLAVE`.
 3. Ejecute `enviarAContabilidad` una vez y `activarEnvioDiario` para que corra cada noche.
 
 Cada envío actualiza nombre, cargo, lugar, líder y estado de los colaboradores (los nuevos llegan sin salario para completarlos), descuenta las vacaciones aprobadas en el marcaje y convierte cada marca en sábado, domingo o feriado en un día extra pendiente (las reposiciones de horas acordadas con el líder no cuentan).
