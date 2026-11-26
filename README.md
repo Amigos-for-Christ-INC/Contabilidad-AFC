@@ -13,6 +13,7 @@ App web de contabilidad, cheques, inventario y planilla para Amigos for Christ s
 | `002-roles-inventario.sql` | Migración 2: roles configurables, bodegas e inventario. Se ejecuta después de `schema.sql`. |
 | `003-bancos-cheques.sql` | Migración 3: cuentas bancarias BANPRO, cheques con aprobación, impresión y conciliación básica. Se ejecuta después de `002`. |
 | `004-planilla-marcaje.sql` | Migración 4: colaboradores, planilla (INSS, IR, INATEC), vacaciones y conexión con la app de marcaje. Se ejecuta después de `003`. |
+| `005-pago-marcaje.sql` | Migración 5: consulta "Mi pago" para la app de marcaje (cada trabajador ve solo lo suyo). |
 | `integracion/PuenteContabilidad.gs` | Archivo para el Apps Script de la app de marcaje: envía cada noche colaboradores, marcas y permisos. |
 | `index.html` | La app web completa (no necesita compilar nada). |
 | `logo.png`, `logo-blanco.png` | Logos oficiales de Amigos for Christ. |
@@ -66,6 +67,8 @@ App web de contabilidad, cheques, inventario y planilla para Amigos for Christ s
 3. Ejecute `enviarAContabilidad` una vez y `activarEnvioDiario` para que corra cada noche.
 
 Cada envío actualiza nombre, cargo, lugar, líder y estado de los colaboradores (los nuevos llegan sin salario para completarlos), descuenta las vacaciones aprobadas en el marcaje y convierte cada marca en sábado, domingo o feriado en un día extra pendiente (las reposiciones de horas acordadas con el líder no cuentan).
+
+En la app de marcaje, la pestaña **Mi pago** muestra al trabajador su salario mensual, el neto recibido en el mes y el detalle de cada planilla aprobada (INSS, IR, bonos y deducciones), además de su saldo de vacaciones. El servidor del marcaje solo consulta el correo de quien inició sesión.
 
 ### Interfaz
 - Panel de inicio con gráficos de ingresos y gastos, inventario por bodega y saldos bancarios; cheques esperando su aprobación.
