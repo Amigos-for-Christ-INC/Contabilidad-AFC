@@ -140,6 +140,10 @@ tr.total td{font-weight:700;color:var(--titulo);border-top:2px solid var(--titul
 .e-borrador{background:var(--azul);color:#fff}
 .e-contabilizado,.e-aprobado{background:var(--navy);color:#fff}
 :root[data-tema="oscuro"] .e-contabilizado,:root[data-tema="oscuro"] .e-aprobado{background:var(--celeste);color:var(--navy)}
+.e-aprobada{background:var(--navy);color:#fff}
+:root[data-tema="oscuro"] .e-aprobada{background:var(--celeste);color:var(--navy)}
+.e-anulada,.e-rechazado{background:var(--borde);color:var(--texto2)}
+.e-pendiente{background:transparent;color:var(--acento);border:1.5px solid var(--acento)}
 .e-por_aprobar{background:transparent;color:var(--acento);border:1.5px solid var(--acento);animation:latido 2s infinite}
 .e-anulado{background:var(--borde);color:var(--texto2)}
 .e-abierto{background:var(--azul);color:#fff}
@@ -325,6 +329,11 @@ const PERMISOS = [
   ['bancos.aprobar', 'Bancos', 'Aprobar o rechazar cheques (nunca los que uno mismo elaboró)', 'Aprobar cheques'],
   ['bancos.anular', 'Bancos', 'Anular cheques aprobados', 'Anular cheques'],
   ['bancos.cuentas', 'Bancos', 'Cuentas bancarias, chequeras y formato de impresión', 'Cuentas bancarias'],
+  ['planilla.ver', 'Planilla', 'Ver colaboradores, salarios, planillas y vacaciones', 'Ver planilla'],
+  ['planilla.editar', 'Planilla', 'Colaboradores, elaborar planillas, novedades y vacaciones', 'Elaborar planillas'],
+  ['planilla.aprobar', 'Planilla', 'Aprobar, devolver y anular planillas (nunca las que uno elaboró)', 'Aprobar planillas'],
+  ['planilla.config', 'Planilla', 'Tasas legales, tabla del IR, conceptos y conexión con el marcaje', 'Configurar planilla'],
+  ['vacaciones.aprobar', 'Planilla', 'Aprobar los días extra que suman a vacaciones', 'Aprobar días extra'],
   ['admin.usuarios', 'Administración', 'Usuarios, roles y bitácora', 'Usuarios y roles']
 ];
 const TIPOS_MOV = { entrada: 'Entrada', salida: 'Salida', traslado: 'Traslado', ajuste: 'Ajuste' };
@@ -366,6 +375,11 @@ function mensajeError(e) {
     [/(productos|producto_presentaciones|inv_movimiento_lineas)_unidad_id_fkey/, 'No se puede eliminar: la unidad está en uso'],
     [/productos_categoria_id_fkey/, 'No se puede eliminar: la categoría tiene productos'],
     [/bodegas_cuenta_inventario_id_fkey|inv_parametros_cuenta/, 'No se puede eliminar: la cuenta la usa el inventario'],
+    [/empleados_correo_key/, 'Ya existe un colaborador con ese correo'],
+    [/empleados_codigo_key/, 'Ya existe un colaborador con ese código'],
+    [/conceptos_planilla_codigo_key/, 'Ya existe un concepto con ese código'],
+    [/ir_tramos_vigente_desde_desde_key/, 'Hay dos tramos del IR con el mismo inicio'],
+    [/(planilla_lineas|planilla_novedades|vacaciones_movimientos)_empleado_id_fkey/, 'No se puede eliminar: el colaborador tiene planillas o vacaciones. Márquelo de baja.'],
     [/row-level security|permission denied/i, 'No tiene permiso para esta acción'],
     [/Failed to fetch|NetworkError/i, 'No hay conexión con el servidor']
   ];
@@ -384,7 +398,7 @@ function csv(nombre, filas) {
 
 // ---------- estado ----------
 let sb = null, yo = null, permisos = [];
-const cache = { cuentas: [], centros: [], perfiles: [], roles: [], bodegas: [], misBodegas: [], unidades: [], categorias: [], presentaciones: [], productos: [], bancos: [] };
+const cache = { cuentas: [], centros: [], perfiles: [], roles: [], bodegas: [], misBodegas: [], unidades: [], categorias: [], presentaciones: [], productos: [], bancos: [], empleados: [] };
 const puede = p => permisos.includes(p);
 const editor = () => puede('contabilidad.editar');
 const admin = () => puede('admin.usuarios');
@@ -424,6 +438,7 @@ async function cargarCatalogos() {
   cache.bodegas = bo; cache.unidades = un; cache.categorias = ca; cache.presentaciones = pr; cache.productos = prod;
   cache.misBodegas = puede('inventario.todas_bodegas') ? bo.map(b => b.id) : pb.map(x => x.bodega_id);
   cache.bancos = cbs;
+  if ((puede('planilla.ver') || puede('vacaciones.aprobar')) && !cache.empleados.length) { try { await cargarEmpleados(); } catch {} }
 }
 const opcionesCentro = (sel, todos = false) =>
   `<option value="">${todos ? 'Todos los centros' : '—'}</option>` +
@@ -554,12 +569,14 @@ const MENU = [
   ['centros', 'Centros de costo', 'contabilidad.ver'], ['tipos-cambio', 'Tipos de cambio', 'contabilidad.ver'],
   ['g', 'Reportes'], ['mayor', 'Libro mayor', 'contabilidad.ver'], ['balanza', 'Balanza de comprobación', 'contabilidad.ver'], ['estados', 'Estados financieros', 'contabilidad.ver'],
   ['g', 'Bancos'], ['cheques', 'Cheques', 'bancos.ver'], ['bancos', 'Cuentas bancarias', 'bancos.ver'],
+  ['g', 'Planilla'], ['planillas', 'Planillas', 'planilla.ver'], ['colaboradores', 'Colaboradores', 'planilla.ver'], ['vacaciones', 'Vacaciones', 'planilla.ver'],
+  ['vacaciones', 'Días extra y vacaciones', 'vacaciones.aprobar'], ['config-planilla', 'Configuración de planilla', 'planilla.config'],
   ['g', 'Inventario'], ['existencias', 'Existencias', 'inventario.ver'], ['movimientos', 'Movimientos', 'inventario.ver'], ['kardex', 'Kardex', 'inventario.ver'],
   ['productos', 'Productos', 'inventario.ver'], ['bodegas', 'Bodegas', 'inventario.ver'],
   ['g', 'Administración'], ['periodos', 'Períodos y cierre', 'contabilidad.ver'], ['usuarios', 'Usuarios', 'admin.usuarios'], ['roles', 'Roles y permisos', 'admin.usuarios'], ['bitacora', 'Bitácora', 'admin.usuarios']
 ];
 function menuVisible() {
-  const items = MENU.filter(m => m[0] === 'g' || !m[2] || puede(m[2]));
+  const items = MENU.filter(m => m[0] === 'g' || !m[2] || puede(m[2])).filter((m, i, a) => m[0] === 'g' || a.findIndex(x => x[0] === m[0]) === i);
   return items.filter((m, i) => m[0] !== 'g' || (items[i + 1] && items[i + 1][0] !== 'g'));
 }
 const ICONOS = {
@@ -581,7 +598,11 @@ const ICONOS = {
   periodos: 'M4 6h16v15H4zM4 10h16M9 3v5M15 3v5',
   usuarios: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M17 11a3 3 0 1 0 0-6M22 21a6 6 0 0 0-4-5.6',
   roles: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4',
-  bitacora: 'M12 8v4l3 2M12 3a9 9 0 1 0 9 9'
+  bitacora: 'M12 8v4l3 2M12 3a9 9 0 1 0 9 9',
+  planillas: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
+  colaboradores: 'M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0zM4 21a8 8 0 0 1 16 0',
+  vacaciones: 'M12 3v2M12 19v2M5 5l1.5 1.5M17.5 17.5L19 19M3 12h2M19 12h2M5 19l1.5-1.5M17.5 6.5L19 5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+  'config-planilla': 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 1.2 14H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 7a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 1.2V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H23a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'
 };
 const icono = (k, tam = 18) => `<svg class="ico" width="${tam}" height="${tam}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONOS[k] || ICONOS['']}"/></svg>`;
 const iniciales = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('').toUpperCase();
@@ -596,7 +617,7 @@ function armarEstructura() {
   <div class="barra-movil"><button id="b-menu">☰ Menú</button><img src="logo-blanco.png" alt="Amigos for Christ"><button class="der" id="b-buscar-m">⌕</button></div>
   <div class="app">
     <aside class="lateral" id="lateral">
-      <div><img src="logo-blanco.png" alt="Amigos for Christ"><div class="sub">Contabilidad · Bancos · Inventario</div></div>
+      <div><img src="logo-blanco.png" alt="Amigos for Christ"><div class="sub">Contabilidad · Bancos · Inventario · Planilla</div></div>
       <button class="buscador" id="b-buscar">⌕ Buscar… <kbd>Ctrl K</kbd></button>
       <nav class="nav">${menuVisible().map(([r, t]) => r === 'g' ? `<div class="grupo">${t}</div>` : `<a href="#${r}" data-ruta="${r}">${icono(r)}<span>${t}</span></a>`).join('')}</nav>
       <div class="usuario"><div class="avatar">${esc(iniciales(yo.nombre || yo.correo))}</div><b>${esc(yo.nombre || yo.correo)}</b><span>${esc(nombreRol(yo.rol_id))}</span>
@@ -612,21 +633,25 @@ function armarEstructura() {
   actualizarInsignias();
 }
 async function actualizarInsignias() {
-  if (!puede('bancos.aprobar')) return;
-  try {
-    const r = await sb.from('cheques').select('id', { count: 'exact', head: true }).eq('estado', 'por_aprobar');
-    const a = $('#lateral a[data-ruta="cheques"]'); if (!a) return;
+  const poner = (ruta, n, titulo) => {
+    const a = $(`#lateral a[data-ruta="${ruta}"]`); if (!a) return;
     a.querySelector('.insignia')?.remove();
-    if (r.count) a.insertAdjacentHTML('beforeend', `<span class="insignia" title="Por aprobar">${r.count}</span>`);
+    if (n) a.insertAdjacentHTML('beforeend', `<span class="insignia" title="${titulo}">${n}</span>`);
+  };
+  try {
+    if (puede('bancos.aprobar')) poner('cheques', (await sb.from('cheques').select('id', { count: 'exact', head: true }).eq('estado', 'por_aprobar')).count, 'Por aprobar');
+    if (puede('planilla.aprobar')) poner('planillas', (await sb.from('planillas').select('id', { count: 'exact', head: true }).eq('estado', 'por_aprobar')).count, 'Por aprobar');
+    if (puede('vacaciones.aprobar')) poner('vacaciones', (await sb.from('vacaciones_movimientos').select('id', { count: 'exact', head: true }).eq('tipo', 'dia_extra').eq('estado', 'pendiente')).count, 'Días extra por aprobar');
   } catch {}
 }
 const RUTAS = {
   '': vInicio, asientos: vAsientos, asiento: vAsiento, catalogo: vCatalogo, centros: vCentros, 'tipos-cambio': vTiposCambio,
   mayor: vMayor, balanza: vBalanza, estados: vEstados, periodos: vPeriodos, usuarios: vUsuarios, bitacora: vBitacora,
   roles: vRoles, existencias: vExistencias, movimientos: vMovimientos, movimiento: vMovimiento, kardex: vKardex,
-  productos: vProductos, bodegas: vBodegas, bancos: vBancos, cheques: vCheques, cheque: vCheque
+  productos: vProductos, bodegas: vBodegas, bancos: vBancos, cheques: vCheques, cheque: vCheque,
+  planillas: vPlanillas, planilla: vPlanilla, colaboradores: vColaboradores, colaborador: vColaboradores, vacaciones: vVacaciones, 'config-planilla': vConfigPlanilla
 };
-const PADRE_RUTA = { asiento: 'asientos', movimiento: 'movimientos', cheque: 'cheques' };
+const PADRE_RUTA = { asiento: 'asientos', movimiento: 'movimientos', cheque: 'cheques', planilla: 'planillas', colaborador: 'colaboradores' };
 const ESQUELETO = `<div class="esqueleto"><div class="esq" style="height:56px;width:40%"></div><div class="kpis" style="margin:0">${'<div class="esq" style="height:96px"></div>'.repeat(4)}</div><div class="esq" style="height:280px"></div></div>`;
 let graficos = [];
 async function mostrar() {
@@ -681,7 +706,13 @@ async function vInicio(m) {
   const rechazados = (misRech || []).filter(c => c.motivo_rechazo);
   const sim = mon => mon === 'USD' ? 'US$' : 'C$';
 
+  const [plPend, extraPend] = await Promise.all([
+    puede('planilla.aprobar') ? q(sb.from('planillas').select('*').eq('estado', 'por_aprobar').order('enviado_en')).catch(() => []) : nada,
+    puede('vacaciones.aprobar') ? q(sb.from('vacaciones_movimientos').select('*').eq('tipo', 'dia_extra').eq('estado', 'pendiente')).catch(() => []) : nada
+  ]);
+  const plParaMi = (plPend || []).filter(p => p.creado_por !== yo.id);
   const rapidas = [
+    puede('planilla.editar') && ['planilla/nueva', 'planillas', 'Nueva planilla', 'Quincenal o mensual'],
     puede('bancos.emitir') && ['cheque/nuevo', 'cheques', 'Nuevo cheque', 'Elaborar y enviar a aprobación'],
     editor() && ['asiento/nuevo', 'asientos', 'Nuevo asiento', 'Registro contable manual'],
     puede('inventario.editar') && ['movimiento/nuevo-entrada', 'existencias', 'Entrada a bodega', 'Compras y donaciones'],
@@ -696,6 +727,9 @@ async function vInicio(m) {
       <a class="rapida" href="#" id="r-buscar"><span class="circ">⌕</span><span>Buscar<small>Ctrl + K desde cualquier pantalla</small></span></a></div>` : ''}
     ${paraMi.length ? `<div class="tarjeta" style="border-left:4px solid var(--azul)"><h2>${paraMi.length} cheque${paraMi.length > 1 ? 's' : ''} esperan su aprobación</h2>
       ${paraMi.slice(0, 5).map(c => `<div class="pendiente" onclick="location.hash='cheque/${c.id}'"><span class="etiqueta e-por_aprobar">Por aprobar</span><span><b>${esc(c.beneficiario)}</b><br><span class="muted">${esc(c.concepto)} · elaborado por ${esc(nombrePerfil(c.creado_por))}</span></span><span class="monto">${sim(c.moneda)} ${fmt(c.monto)}</span></div>`).join('')}</div>` : ''}
+    ${plParaMi.length || (extraPend || []).length ? `<div class="tarjeta" style="border-left:4px solid var(--azul)"><h2>Pendientes de Administración</h2>
+      ${plParaMi.map(p => `<div class="pendiente" onclick="location.hash='planilla/${p.id}'"><span class="etiqueta e-por_aprobar">Planilla</span><span><b>${esc(p.descripcion)}</b><br><span class="muted">${p.empleados} colaboradores · elaborada por ${esc(nombrePerfil(p.creado_por))}</span></span><span class="monto">C$ ${fmt(p.total_neto)}</span></div>`).join('')}
+      ${(extraPend || []).length ? `<div class="pendiente" onclick="location.hash='vacaciones'"><span class="etiqueta e-por_aprobar">Días extra</span><span><b>${extraPend.length} día(s) extra trabajados</b><br><span class="muted">Al aprobarlos se suman a las vacaciones</span></span></div>` : ''}</div>` : ''}
     ${rechazados.length ? `<div class="aviso error">Tiene ${rechazados.length} cheque(s) devuelto(s) para corregir: ${rechazados.map(c => `<a href="#cheque/${c.id}">${esc(c.beneficiario)}</a>`).join(', ')}.</div>` : ''}
     <div class="kpis">
       ${C ? `<div class="kpi"><div class="et">Ingresos de ${MESES[mes - 1].toLowerCase()}</div><div class="val">C$ ${contar(mesAct.ingresos)}</div></div>
@@ -1412,7 +1446,7 @@ async function vBitacora(m) {
   if (!admin()) { m.innerHTML = '<div class="aviso error">Solo el administrador ve esta sección.</div>'; return; }
   const filas = await q(sb.from('bitacora').select('*').order('fecha', { ascending: false }).limit(300));
   const OPS = { INSERT: 'Creó', UPDATE: 'Modificó', DELETE: 'Eliminó' };
-  const TABLAS = { cuentas_bancarias: 'Cuenta bancaria', cheques: 'Cheque', cuentas: 'Cuenta', centros_costo: 'Centro de costo', tipos_cambio: 'Tipo de cambio', periodos: 'Período', asientos: 'Asiento', perfiles: 'Usuario', roles: 'Rol', bodegas: 'Bodega', productos: 'Producto', inv_parametros: 'Cuentas de inventario', inv_movimientos: 'Movimiento de inventario' };
+  const TABLAS = { empleados: 'Colaborador', planillas: 'Planilla', planilla_parametros: 'Tasas de planilla', ir_tramos: 'Tabla del IR', conceptos_planilla: 'Concepto de planilla', vacaciones_movimientos: 'Vacaciones', cuentas_bancarias: 'Cuenta bancaria', cheques: 'Cheque', cuentas: 'Cuenta', centros_costo: 'Centro de costo', tipos_cambio: 'Tipo de cambio', periodos: 'Período', asientos: 'Asiento', perfiles: 'Usuario', roles: 'Rol', bodegas: 'Bodega', productos: 'Producto', inv_parametros: 'Cuentas de inventario', inv_movimientos: 'Movimiento de inventario' };
   const cambios = (a, d) => {
     if (!a || !d) return JSON.stringify(a || d, null, 1);
     return Object.keys(d).filter(k => JSON.stringify(a[k]) !== JSON.stringify(d[k])).map(k => `${k}: ${JSON.stringify(a[k])} → ${JSON.stringify(d[k])}`).join('\n');
@@ -2434,12 +2468,14 @@ async function buscarPaleta(txt) {
     puede('inventario.editar') && { g: 'Acciones', t: 'Nueva entrada a bodega', h: '#movimiento/nuevo-entrada', ic: 'existencias' },
     puede('inventario.editar') && { g: 'Acciones', t: 'Nueva salida de bodega', h: '#movimiento/nuevo-salida', ic: 'movimientos' },
     puede('inventario.editar') && { g: 'Acciones', t: 'Nuevo traslado entre bodegas', h: '#movimiento/nuevo-traslado', ic: 'movimientos' },
+    puede('planilla.editar') && { g: 'Acciones', t: 'Nueva planilla', h: '#planilla/nueva', ic: 'planillas' },
     { g: 'Acciones', t: document.documentElement.dataset.tema === 'oscuro' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro', fn: () => { aplicarTema(document.documentElement.dataset.tema === 'oscuro' ? 'claro' : 'oscuro'); mostrar(); }, ic: 'roles' }
   ].filter(Boolean);
   const coincide = x => !t || x.t.toLowerCase().includes(t);
   let items = [...acciones.filter(coincide), ...pantallas.filter(coincide)];
   if (t.length >= 2) {
     items.push(...cache.productos.filter(p => (p.codigo + ' ' + p.nombre).toLowerCase().includes(t)).slice(0, 5).map(p => ({ g: 'Productos', t: etiquetaProducto(p), h: '#kardex/' + p.id, ic: 'productos', d: 'Kardex' })));
+    items.push(...cache.empleados.filter(e => [e.nombre, e.correo, e.cargo, e.cedula].join(' ').toLowerCase().includes(t)).slice(0, 5).map(e => ({ g: 'Colaboradores', t: e.nombre, h: '#colaborador/' + e.id, ic: 'colaboradores', d: e.cargo || '' })));
     if (puede('contabilidad.ver')) items.push(...cache.cuentas.filter(c => (c.codigo + ' ' + c.nombre).toLowerCase().includes(t)).slice(0, 5).map(c => ({ g: 'Cuentas contables', t: etiquetaCuenta(c), h: '#mayor/' + c.id, ic: 'mayor', d: 'Libro mayor' })));
   }
   pintarPaleta(items);
@@ -2490,6 +2526,497 @@ document.addEventListener('DOMContentLoaded', () => {});
 $('#paleta-q').addEventListener('input', e => buscarPaleta(e.target.value));
 $('#paleta-res').addEventListener('click', e => { const it = e.target.closest('.it'); if (it) ejecutarPaleta(Number(it.dataset.i)); });
 $('#paleta').addEventListener('click', e => { if (e.target.id === 'paleta') cerrarPaleta(); });
+
+// ============================================================
+// Planilla, vacaciones y app de marcaje
+// ============================================================
+const ESTADOS_PLANILLA = { borrador: 'Borrador', por_aprobar: 'Por aprobar', aprobada: 'Aprobada', anulada: 'Anulada' };
+const TIPOS_VAC = { saldo_inicial: 'Saldo inicial', acumulado: 'Acumulado por planilla', tomadas: 'Vacaciones tomadas', dia_extra: 'Día extra trabajado', ajuste: 'Ajuste' };
+const ESTADOS_VAC = { pendiente: 'Pendiente', aprobado: 'Aprobado', rechazado: 'Rechazado', anulado: 'Anulado' };
+const empleadoPorId = id => cache.empleados.find(e => e.id === Number(id));
+const centroCod = id => cache.centros.find(c => c.id === Number(id))?.codigo || '';
+async function cargarEmpleados() {
+  cache.empleados = (puede('planilla.ver') || puede('vacaciones.aprobar')) ? await q(sb.from('empleados').select('*').order('nombre')) : [];
+  return cache.empleados;
+}
+const opcionesEmpleado = (sel, soloActivos = true) => cache.empleados.filter(e => !soloActivos || e.activo || e.id === Number(sel))
+  .map(e => `<option value="${e.id}" ${e.id === Number(sel) ? 'selected' : ''}>${esc(e.nombre)}${e.cargo ? ' · ' + esc(e.cargo) : ''}</option>`).join('');
+const diasPagados = l => Number(l.salario_mensual) ? r2(Number(l.salario_periodo) * 30 / Number(l.salario_mensual)) : 0;
+const incompleto = e => e.activo && (!Number(e.salario_mensual) || !e.cedula);
+
+// ---------- Colaboradores ----------
+let filtroEmp = { texto: '', estado: 'activos', tipo: '' };
+async function vColaboradores(m, arg) {
+  await cargarCatalogos(); await cargarEmpleados();
+  const saldos = await q(sb.rpc('saldos_vacaciones'));
+  const sv = id => saldos.find(s => Number(s.empleado_id) === id) || {};
+  const f = filtroEmp, t = f.texto.toLowerCase();
+  const filas = cache.empleados.filter(e => (f.estado === 'todos' || (f.estado === 'activos' ? e.activo : f.estado === 'incompletos' ? incompleto(e) : !e.activo))
+    && (!f.tipo || e.tipo_pago === f.tipo) && (!t || [e.nombre, e.correo, e.cargo, e.lugar, e.cedula, e.codigo].join(' ').toLowerCase().includes(t)));
+  const nInc = cache.empleados.filter(incompleto).length, ed = puede('planilla.editar');
+  const activos = cache.empleados.filter(e => e.activo);
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Colaboradores</h1><p>Ficha de cada colaborador para marcaje, planilla y vacaciones</p></div>
+      <div class="acciones">${ed ? '<button class="btn" id="b-nuevo">+ Colaborador</button>' : ''}<button class="btn sec" id="b-csv">Exportar CSV</button></div></div>
+    ${nInc ? `<div class="aviso">${nInc} colaborador(es) activos sin salario o sin cédula; no entran a la planilla hasta completarlos. <a href="#" id="v-inc">Ver cuáles</a></div>` : ''}
+    <div class="kpis">
+      <div class="kpi"><div class="et">Colaboradores activos</div><div class="val">${contar(activos.length, 0)}</div><div class="det">${activos.filter(e => e.origen === 'marcaje').length} vienen de la app de marcaje</div></div>
+      <div class="kpi"><div class="et">Planilla mensual (salarios)</div><div class="val navy">C$ ${contar(activos.reduce((s, e) => s + Number(e.salario_mensual), 0))}</div></div>
+      <div class="kpi"><div class="et">Quincenales / mensuales</div><div class="val">${activos.filter(e => e.tipo_pago === 'quincenal').length} / ${activos.filter(e => e.tipo_pago === 'mensual').length}</div></div>
+    </div>
+    <div class="tarjeta">
+      <form class="filtros" id="f-emp">
+        <label class="campo" style="flex:1;min-width:200px">Buscar<input name="texto" value="${esc(f.texto)}" placeholder="Nombre, correo, cargo, cédula o lugar"></label>
+        <label class="campo">Estado<select name="estado">${[['activos', 'Activos'], ['incompletos', 'Por completar'], ['inactivos', 'De baja'], ['todos', 'Todos']].map(([v, n]) => `<option value="${v}" ${f.estado === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="campo">Pago<select name="tipo"><option value="">Todos</option><option value="quincenal" ${f.tipo === 'quincenal' ? 'selected' : ''}>Quincenal</option><option value="mensual" ${f.tipo === 'mensual' ? 'selected' : ''}>Mensual</option></select></label>
+        <button class="btn sec">Filtrar</button>
+      </form>
+      <div class="envoltura">${filas.length ? `<table>
+        <thead><tr><th>Colaborador</th><th>Cargo</th><th>Lugar</th><th>Centro</th><th>Pago</th><th class="num">Salario mensual</th><th class="num">Vacaciones (días)</th><th></th></tr></thead>
+        <tbody>${filas.map(e => { const s = sv(e.id); return `<tr class="clic" data-id="${e.id}">
+          <td><b>${esc(e.nombre)}</b><br><span class="muted" style="font-size:12.5px">${esc(e.correo || e.cedula || '')}</span></td>
+          <td>${esc(e.cargo || '')}</td><td>${esc(e.lugar || '')}</td><td>${esc(centroCod(e.centro_costo_id))}</td>
+          <td>${e.tipo_pago === 'mensual' ? 'Mensual' : 'Quincenal'}</td>
+          <td class="num">${Number(e.salario_mensual) ? fmt(e.salario_mensual) : '<span class="etiqueta e-por_aprobar">Falta</span>'}</td>
+          <td class="num">${fmtQ(r2(Number(s.saldo || 0)))}${Number(s.extra_pendientes) ? ` <span class="etiqueta e-por_aprobar" title="Días extra por aprobar">+${fmtQ(s.extra_pendientes)}</span>` : ''}</td>
+          <td>${e.origen === 'marcaje' ? '<span class="etiqueta e-anulado" title="Sincronizado con la app de marcaje">Marcaje</span>' : ''}${e.activo ? '' : ' <span class="etiqueta e-anulado">De baja</span>'}</td></tr>`; }).join('')}</tbody></table>`
+        : '<div class="vacio"><span class="ilus">👥</span>No hay colaboradores en esta vista.</div>'}</div>
+    </div>`;
+  $('#f-emp').onsubmit = e => { e.preventDefault(); Object.assign(filtroEmp, Object.fromEntries(new FormData(e.target))); vColaboradores(m); };
+  if ($('#v-inc')) $('#v-inc').onclick = e => { e.preventDefault(); filtroEmp.estado = 'incompletos'; vColaboradores(m); };
+  if ($('#b-nuevo')) $('#b-nuevo').onclick = () => modalColaborador(m);
+  $$('tr[data-id]').forEach(tr => tr.onclick = () => modalColaborador(m, empleadoPorId(tr.dataset.id)));
+  $('#b-csv').onclick = () => csv('colaboradores.csv', [['Codigo', 'Nombre', 'Correo', 'Cedula', 'INSS', 'Cargo', 'Lugar', 'Centro', 'Ingreso', 'Baja', 'Pago', 'Salario', 'Cuenta', 'Activo', 'Vacaciones'],
+    ...filas.map(e => [e.codigo, e.nombre, e.correo, e.cedula, e.inss_numero, e.cargo, e.lugar, centroCod(e.centro_costo_id), e.fecha_ingreso, e.fecha_baja, e.tipo_pago, e.salario_mensual, e.cuenta_banco, e.activo ? 'Si' : 'No', r2(Number(sv(e.id).saldo || 0))])]);
+  if (arg && empleadoPorId(arg)) modalColaborador(m, empleadoPorId(arg));
+}
+
+function modalColaborador(m, e = null) {
+  const ed = puede('planilla.editar');
+  const v = e || { tipo_pago: 'quincenal', activo: true, fecha_ingreso: hoy() };
+  const ro = ed ? '' : 'disabled';
+  abrirModal(`<h2>${e ? esc(e.nombre) : 'Nuevo colaborador'}</h2>
+    ${e?.origen === 'marcaje' ? '<p class="muted" style="font-size:13px;margin:0 0 10px">Nombre, cargo, lugar, líder y estado vienen de la app de marcaje y se actualizan en cada envío. Complete aquí los datos de planilla.</p>' : ''}
+    <div class="rejilla">
+      <label class="campo ancho">Nombre completo<input name="nombre" value="${esc(v.nombre || '')}" required ${ro}></label>
+      <label class="campo">Correo<input name="correo" type="email" value="${esc(v.correo || '')}" ${ro} placeholder="nombre@amigosforchrist.org"></label>
+      <label class="campo">Código<input name="codigo" value="${esc(v.codigo || '')}" ${ro}></label>
+      <label class="campo">Cédula<input name="cedula" value="${esc(v.cedula || '')}" ${ro} placeholder="000-000000-0000X"></label>
+      <label class="campo">Nº INSS<input name="inss_numero" value="${esc(v.inss_numero || '')}" ${ro}></label>
+      <label class="campo">Cargo<input name="cargo" value="${esc(v.cargo || '')}" ${ro}></label>
+      <label class="campo">Lugar de trabajo<input name="lugar" value="${esc(v.lugar || '')}" ${ro}></label>
+      <label class="campo">Correo del líder<input name="lider_correo" value="${esc(v.lider_correo || '')}" ${ro}></label>
+      <label class="campo">Centro de costo<select name="centro_costo_id" ${ro}>${opcionesCentro(v.centro_costo_id)}</select></label>
+      <label class="campo">Fecha de ingreso<input type="date" name="fecha_ingreso" value="${v.fecha_ingreso || ''}" ${ro}></label>
+      <label class="campo">Fecha de baja<input type="date" name="fecha_baja" value="${v.fecha_baja || ''}" ${ro}></label>
+      <label class="campo">Pago<select name="tipo_pago" ${ro}><option value="quincenal" ${v.tipo_pago !== 'mensual' ? 'selected' : ''}>Quincenal</option><option value="mensual" ${v.tipo_pago === 'mensual' ? 'selected' : ''}>Mensual</option></select></label>
+      <label class="campo">Salario mensual (C$)<input name="salario_mensual" class="monto" inputmode="decimal" value="${Number(v.salario_mensual) ? fmt(v.salario_mensual) : ''}" ${ro}></label>
+      <label class="campo">Cuenta BANPRO<input name="cuenta_banco" value="${esc(v.cuenta_banco || '')}" ${ro}></label>
+      <label class="campo chk"><input type="checkbox" name="activo" ${v.activo ? 'checked' : ''} ${ro}> Activo</label>
+      <label class="campo ancho">Notas<textarea name="notas" rows="2" ${ro}>${esc(v.notas || '')}</textarea></label>
+    </div>
+    ${e ? `<p style="margin:12px 0 0"><a href="#vacaciones" data-cerrar>Ver vacaciones</a></p>` : ''}`,
+  async d => {
+    if (!ed) return;
+    const f = new FormData($('form', d)), g = k => String(f.get(k) ?? '').trim() || null;
+    const sal = num(f.get('salario_mensual'));
+    if (isNaN(sal) || sal < 0) { avisar('Revise el salario', 'error'); return false; }
+    const val = { nombre: g('nombre'), correo: g('correo')?.toLowerCase() || null, codigo: g('codigo'), cedula: g('cedula'), inss_numero: g('inss_numero'), cargo: g('cargo'),
+      lugar: g('lugar'), lider_correo: g('lider_correo')?.toLowerCase() || null, centro_costo_id: Number(f.get('centro_costo_id')) || null, fecha_ingreso: g('fecha_ingreso'),
+      fecha_baja: g('fecha_baja'), tipo_pago: f.get('tipo_pago'), salario_mensual: sal, cuenta_banco: g('cuenta_banco'), activo: f.get('activo') === 'on', notas: g('notas') };
+    if (e) await q(sb.from('empleados').update(val).eq('id', e.id)); else await q(sb.from('empleados').insert(val));
+    avisar('Colaborador guardado'); await cargarEmpleados(); vColaboradores(m);
+  }, { textoGuardar: ed ? 'Guardar' : 'Cerrar' });
+}
+
+// ---------- Planillas ----------
+function siguienteQuincena() {
+  const [y, mo, d] = hoy().split('-').map(Number), p = n => String(n).padStart(2, '0'), ult = new Date(y, mo, 0).getDate();
+  return d <= 15 ? [`${y}-${p(mo)}-01`, `${y}-${p(mo)}-15`] : [`${y}-${p(mo)}-16`, `${y}-${p(mo)}-${ult}`];
+}
+async function vPlanillas(m, arg) {
+  await cargarCatalogos();
+  const lista = await q(sb.from('planillas').select('*').order('desde', { ascending: false }).order('id', { ascending: false }).limit(200));
+  const ed = puede('planilla.editar');
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Planillas</h1><p>Cálculo de INSS, IR e INATEC, aprobación por otra persona, colillas y asiento automático</p></div>
+      <div class="acciones">${ed ? '<button class="btn" id="b-nueva">+ Nueva planilla</button>' : ''}</div></div>
+    <div class="tarjeta"><div class="envoltura">${lista.length ? `<table>
+      <thead><tr><th>Período</th><th>Descripción</th><th>Tipo</th><th class="num">Colaboradores</th><th class="num">Bruto</th><th class="num">Neto a pagar</th><th>Estado</th><th>Elaboró</th></tr></thead>
+      <tbody>${lista.map(p => `<tr class="clic" onclick="location.hash='planilla/${p.id}'"><td><b>${fecha(p.desde)} – ${fecha(p.hasta)}</b></td><td>${esc(p.descripcion)}</td>
+        <td>${p.tipo === 'mensual' ? 'Mensual' : 'Quincenal'}</td><td class="num">${p.empleados}</td><td class="num">${fmt(p.total_bruto)}</td><td class="num"><b>${fmt(p.total_neto)}</b></td>
+        <td><span class="etiqueta e-${p.estado}">${ESTADOS_PLANILLA[p.estado]}</span>${p.estado === 'borrador' && p.motivo_devolucion ? ' <span class="etiqueta e-anulado" title="' + esc(p.motivo_devolucion) + '">Devuelta</span>' : ''}</td>
+        <td class="muted">${esc(nombrePerfil(p.creado_por))}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="vacio"><span class="ilus">🧾</span>Aún no hay planillas. Complete los salarios en Colaboradores y cree la primera.</div>'}</div></div>`;
+  if ($('#b-nueva')) $('#b-nueva').onclick = () => modalNuevaPlanilla();
+  if (arg === 'nueva' && ed) modalNuevaPlanilla();
+}
+function modalNuevaPlanilla() {
+  const [d, h] = siguienteQuincena();
+  const dlg = abrirModal(`<h2>Nueva planilla</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 10px">Entran los colaboradores activos con ese tipo de pago y salario registrado. Después puede agregar o quitar.</p>
+    <div class="rejilla">
+      <label class="campo">Tipo<select name="tipo"><option value="quincenal">Quincenal</option><option value="mensual">Mensual</option></select></label>
+      <label class="campo">Desde<input type="date" name="desde" value="${d}" required></label>
+      <label class="campo">Hasta<input type="date" name="hasta" value="${h}" required></label>
+      <label class="campo">Fecha de pago<input type="date" name="fecha_pago" value="${h}"></label>
+      <label class="campo ancho">Descripción (opcional)<input name="descripcion" placeholder="Planilla quincenal del …"></label>
+    </div>`, async dl => {
+      const p = Object.fromEntries(new FormData($('form', dl)));
+      const id = await q(sb.rpc('guardar_planilla', { p }));
+      avisar('Planilla creada y calculada'); location.hash = 'planilla/' + id;
+    }, { textoGuardar: 'Crear y calcular' });
+  $('[name=tipo]', dlg).onchange = ev => {
+    const [y, mo] = $('[name=desde]', dlg).value.split('-'), ult = new Date(Number(y), Number(mo), 0).getDate();
+    if (ev.target.value === 'mensual') { $('[name=desde]', dlg).value = `${y}-${mo}-01`; $('[name=hasta]', dlg).value = `${y}-${mo}-${ult}`; $('[name=fecha_pago]', dlg).value = `${y}-${mo}-${ult}`; }
+    else { const [a, b] = siguienteQuincena(); $('[name=desde]', dlg).value = a; $('[name=hasta]', dlg).value = b; $('[name=fecha_pago]', dlg).value = b; }
+  };
+}
+
+async function vPlanilla(m, arg) {
+  if (arg === 'nueva') return vPlanillas(m, 'nueva');
+  await cargarCatalogos(); await cargarEmpleados();
+  const P = await q(sb.from('planillas').select('*').eq('id', Number(arg)).maybeSingle());
+  if (!P) { m.innerHTML = '<div class="aviso error">La planilla no existe o no tiene acceso.</div>'; return; }
+  const [L, N, C, sal] = await Promise.all([
+    q(sb.from('planilla_lineas').select('*').eq('planilla_id', P.id)),
+    q(sb.from('planilla_novedades').select('*').eq('planilla_id', P.id).order('id')),
+    q(sb.from('conceptos_planilla').select('*').order('tipo').order('nombre')),
+    q(sb.rpc('saldos_vacaciones'))
+  ]);
+  L.sort((a, b) => (empleadoPorId(a.empleado_id)?.nombre || '').localeCompare(empleadoPorId(b.empleado_id)?.nombre || ''));
+  const editable = P.estado === 'borrador' && puede('planilla.editar');
+  const puedeAprobar = P.estado === 'por_aprobar' && puede('planilla.aprobar') && P.creado_por !== yo.id;
+  const nov = eid => N.filter(n => n.empleado_id === eid);
+  const conc = id => C.find(c => c.id === id);
+  const costo = Number(P.total_bruto) + Number(P.total_inss_patronal) + Number(P.total_inatec);
+  m.innerHTML = `
+    <div class="cabecera no-imprimir"><div><h1>${esc(P.descripcion)} <span class="etiqueta e-${P.estado}" style="vertical-align:middle;font-size:13px">${ESTADOS_PLANILLA[P.estado]}</span></h1>
+      <p><a href="#planillas">← Volver a planillas</a> · ${P.tipo === 'mensual' ? 'Mensual' : 'Quincenal'} del ${fecha(P.desde)} al ${fecha(P.hasta)} · pago el ${fecha(P.fecha_pago)}</p></div>
+      <div class="acciones">
+        ${editable ? '<button class="btn sec" id="b-agregar">+ Colaborador</button><button class="btn sec" id="b-recalc">Recalcular</button><button class="btn peligro" id="b-eliminar">Eliminar</button><button class="btn" id="b-enviar">Enviar a aprobación →</button>' : ''}
+        ${puedeAprobar ? '<button class="btn" id="b-aprobar">✓ Aprobar</button><button class="btn peligro" id="b-devolver">Devolver</button>' : ''}
+        ${P.estado === 'por_aprobar' && P.creado_por === yo.id && puede('planilla.editar') ? '<button class="btn sec" id="b-retirar">Retirar para corregir</button>' : ''}
+        ${P.estado === 'aprobada' ? '<button class="btn" id="b-colillas">🖨 Colillas</button><button class="btn sec" id="b-pago">Archivo de pago</button>' : ''}
+        <button class="btn sec" id="b-imprimir">Imprimir planilla</button><button class="btn sec" id="b-csv">CSV</button>
+        ${P.estado === 'aprobada' && puede('planilla.aprobar') ? '<button class="btn peligro" id="b-anular">Anular</button>' : ''}
+      </div></div>
+    ${P.estado === 'borrador' && P.motivo_devolucion ? `<div class="aviso error">Devuelta por ${esc(nombrePerfil(P.devuelto_por))}: ${esc(P.motivo_devolucion)}</div>` : ''}
+    ${P.estado === 'por_aprobar' && P.creado_por === yo.id ? '<div class="aviso">Usted elaboró esta planilla; otra persona con permiso de aprobación debe revisarla.</div>' : ''}
+    ${P.estado === 'anulada' ? `<div class="aviso error">Anulada por ${esc(nombrePerfil(P.anulado_por))}: ${esc(P.motivo_anulacion)}</div>` : ''}
+    <div class="kpis">
+      <div class="kpi"><div class="et">Colaboradores</div><div class="val navy">${contar(P.empleados, 0)}</div></div>
+      <div class="kpi"><div class="et">Total devengado</div><div class="val">C$ ${contar(P.total_bruto)}</div><div class="det">INSS ${fmt(P.total_inss_laboral)} · IR ${fmt(P.total_ir)} · otras ${fmt(P.total_deducciones)}</div></div>
+      <div class="kpi"><div class="et">Neto a pagar</div><div class="val">C$ ${contar(P.total_neto)}</div></div>
+      <div class="kpi"><div class="et">Costo total para AFC</div><div class="val navy">C$ ${contar(costo)}</div><div class="det">INSS patronal ${fmt(P.total_inss_patronal)} · INATEC ${fmt(P.total_inatec)}</div></div>
+    </div>
+    ${P.estado !== 'borrador' ? `<div class="tarjeta"><h2>Seguimiento</h2>${pasosPlanilla(P)}${P.asiento_id && puede('contabilidad.ver') ? `<p style="margin:8px 0 0"><a href="#asiento/${P.asiento_id}">Ver asiento contable</a>${P.asiento_anulacion_id ? ` · <a href="#asiento/${P.asiento_anulacion_id}">asiento de anulación</a>` : ''}</p>` : ''}</div>` : ''}
+    <div class="tarjeta">
+      <div class="envoltura"><table id="t-pl">
+        <thead><tr><th>Colaborador</th><th class="num">Días sin goce</th><th class="num">Días pagados</th><th class="num">Salario</th><th class="num">Otros ingresos</th><th class="num">INSS</th><th class="num">IR</th><th class="num">Otras deducc.</th><th class="num">Neto</th><th></th></tr></thead>
+        <tbody>${L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; const nn = nov(l.empleado_id); return `<tr data-l="${l.id}" data-e="${l.empleado_id}">
+          <td><b>${esc(e.nombre || '¿?')}</b><br><span class="muted" style="font-size:12px">${esc(e.cargo || '')}${l.centro_costo_id ? ' · ' + esc(centroCod(l.centro_costo_id)) : ''} · ${fmt(l.salario_mensual)}/mes</span></td>
+          <td class="num">${editable ? `<input class="monto dnp" style="width:60px" inputmode="decimal" value="${Number(l.dias_no_pagados) ? fmtQ(l.dias_no_pagados) : ''}" placeholder="0" title="Permisos sin goce, faltas o suspensiones">` : fmtZ(l.dias_no_pagados)}</td>
+          <td class="num">${fmtQ(diasPagados(l))}</td>
+          <td class="num">${fmt(l.salario_periodo)}</td><td class="num">${fmtZ(l.ingresos)}</td><td class="num">${fmt(l.inss_laboral)}</td><td class="num">${fmtZ(l.ir)}</td><td class="num">${fmtZ(l.deducciones)}</td>
+          <td class="num"><b class="${Number(l.neto) < 0 ? 'dif-mal' : ''}">${fmt(l.neto)}</b></td>
+          <td style="white-space:nowrap"><button class="btn sec chico" data-nov title="Bonos, viáticos, préstamos y otras deducciones">${nn.length ? `Novedades (${nn.length})` : (editable ? '+ Novedad' : '')}</button>${editable ? ' <button class="btn sec chico" data-quitar title="Quitar de esta planilla">✕</button>' : ''}</td></tr>`; }).join('')}
+          <tr class="total"><td>Totales</td><td></td><td></td><td class="num">${fmt(L.reduce((s, l) => s + Number(l.salario_periodo), 0))}</td><td class="num">${fmt(L.reduce((s, l) => s + Number(l.ingresos), 0))}</td>
+            <td class="num">${fmt(P.total_inss_laboral)}</td><td class="num">${fmt(P.total_ir)}</td><td class="num">${fmt(P.total_deducciones)}</td><td class="num">${fmt(P.total_neto)}</td><td></td></tr></tbody></table></div>
+      ${!L.length ? '<div class="vacio">No hay colaboradores en esta planilla. Revise que tengan salario y el tipo de pago correcto.</div>' : ''}
+    </div>`;
+  $$('[data-nov]').forEach(b => { if (!b.textContent) b.remove(); });
+
+  const rpc = async (fn, args, msg) => { try { await q(sb.rpc(fn, args)); if (msg) avisar(msg); actualizarInsignias(); mostrar(); } catch (e) { fallo(e); } };
+  $$('#t-pl .dnp').forEach(inp => inp.onchange = () => {
+    const tr = inp.closest('tr'), l = L.find(x => x.id === Number(tr.dataset.l)), sg = num(inp.value);
+    if (isNaN(sg) || sg < 0 || sg > l.dias_periodo) { avisar(`Los días sin goce van de 0 a ${l.dias_periodo}`, 'error'); inp.value = Number(l.dias_no_pagados) ? fmtQ(l.dias_no_pagados) : ''; return; }
+    rpc('actualizar_linea_planilla', { p_linea: l.id, p_dias_no_pagados: r2(sg) }, 'Días actualizados');
+  });
+  $$('#t-pl [data-quitar]').forEach(b => b.onclick = () => { const tr = b.closest('tr'); if (confirm(`¿Quitar a ${empleadoPorId(tr.dataset.e)?.nombre} de esta planilla?`)) rpc('quitar_empleado_planilla', { p_linea: Number(tr.dataset.l) }, 'Colaborador quitado'); });
+  $$('#t-pl [data-nov]').forEach(b => b.onclick = () => modalNovedades(P, Number(b.closest('tr').dataset.e), nov(Number(b.closest('tr').dataset.e)), C, editable));
+  if ($('#b-recalc')) $('#b-recalc').onclick = () => rpc('recalcular_planilla', { p_id: P.id }, 'Planilla recalculada');
+  if ($('#b-enviar')) $('#b-enviar').onclick = () => rpc('enviar_planilla', { p_id: P.id }, 'Planilla enviada a aprobación');
+  if ($('#b-retirar')) $('#b-retirar').onclick = () => rpc('retirar_planilla', { p_id: P.id }, 'Planilla retirada de aprobación');
+  if ($('#b-eliminar')) $('#b-eliminar').onclick = async () => { if (!confirm('¿Eliminar esta planilla en borrador?')) return; try { await q(sb.rpc('eliminar_planilla', { p_id: P.id })); avisar('Planilla eliminada'); location.hash = 'planillas'; } catch (e) { fallo(e); } };
+  if ($('#b-agregar')) $('#b-agregar').onclick = () => {
+    const fuera = cache.empleados.filter(e => e.activo && !L.some(l => l.empleado_id === e.id));
+    abrirModal(`<h2>Agregar colaborador</h2><label class="campo">Colaborador<select name="e">${fuera.map(e => `<option value="${e.id}">${esc(e.nombre)} · ${e.tipo_pago} · ${fmt(e.salario_mensual)}</option>`).join('')}</select></label>`,
+      async d => { await q(sb.rpc('agregar_empleado_planilla', { p_planilla: P.id, p_empleado: Number($('[name=e]', d).value) })); avisar('Colaborador agregado'); mostrar(); });
+  };
+  if ($('#b-aprobar')) $('#b-aprobar').onclick = () => abrirModal(`<h2>Aprobar planilla</h2><p>${esc(P.descripcion)}</p>
+      <p>Neto a pagar: <b>C$ ${fmt(P.total_neto)}</b> a ${P.empleados} colaboradores. Costo total: <b>C$ ${fmt(costo)}</b>.</p>
+      <p class="muted">Se registra el asiento contable y se acumulan las vacaciones del período.</p>`,
+    async () => { await q(sb.rpc('aprobar_planilla', { p_id: P.id })); avisar('Planilla aprobada y contabilizada'); actualizarInsignias(); mostrar(); }, { textoGuardar: 'Aprobar' });
+  if ($('#b-devolver')) $('#b-devolver').onclick = () => abrirModal(`<h2>Devolver planilla para corregir</h2><label class="campo">Motivo<textarea name="motivo" rows="3" required></textarea></label>`,
+    async d => { await q(sb.rpc('devolver_planilla', { p_id: P.id, p_motivo: $('[name=motivo]', d).value })); avisar('Planilla devuelta'); actualizarInsignias(); mostrar(); }, { textoGuardar: 'Devolver' });
+  if ($('#b-anular')) $('#b-anular').onclick = () => abrirModal(`<h2>Anular planilla</h2><p class="muted">Se registra el asiento de reversión y se anulan las vacaciones acumuladas. No se puede deshacer.</p>
+      <div class="rejilla"><label class="campo">Fecha<input type="date" name="f" min="${P.hasta}" value="${hoy() < P.hasta ? P.hasta : hoy()}"></label><label class="campo ancho">Motivo<textarea name="motivo" rows="3" required></textarea></label></div>`,
+    async d => { await q(sb.rpc('anular_planilla', { p_id: P.id, p_motivo: $('[name=motivo]', d).value, p_fecha: $('[name=f]', d).value })); avisar('Planilla anulada'); mostrar(); }, { textoGuardar: 'Anular planilla' });
+  const filasCsv = () => [['Colaborador', 'Cedula', 'INSS', 'Cargo', 'Centro', 'Salario mensual', 'Dias pagados', 'Salario', 'Otros ingresos', 'Bruto', 'INSS laboral', 'IR', 'Otras deducciones', 'Neto', 'INSS patronal', 'INATEC'],
+    ...L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; return [e.nombre, e.cedula, e.inss_numero, e.cargo, centroCod(l.centro_costo_id), l.salario_mensual, diasPagados(l), l.salario_periodo, l.ingresos, l.bruto, l.inss_laboral, l.ir, l.deducciones, l.neto, l.inss_patronal, l.inatec]; })];
+  $('#b-csv').onclick = () => csv(`planilla_${P.desde}_${P.hasta}.csv`, filasCsv());
+  $('#b-imprimir').onclick = () => imprimirHTML(htmlPlanilla(P, L), 'size: letter landscape; margin: 10mm');
+  if ($('#b-colillas')) $('#b-colillas').onclick = () => imprimirHTML(htmlColillas(P, L, N, C, sal), 'size: letter; margin: 8mm');
+  if ($('#b-pago')) $('#b-pago').onclick = () => {
+    const sinCta = L.filter(l => !empleadoPorId(l.empleado_id)?.cuenta_banco);
+    if (sinCta.length) avisar(`${sinCta.length} colaborador(es) sin cuenta BANPRO: ${sinCta.map(l => empleadoPorId(l.empleado_id)?.nombre).join(', ')}`, 'error');
+    csv(`pago_planilla_${P.fecha_pago}.csv`, [['Cuenta', 'Nombre', 'Cedula', 'Monto', 'Referencia'],
+      ...L.filter(l => Number(l.neto) > 0).map(l => { const e = empleadoPorId(l.empleado_id) || {}; return [e.cuenta_banco || '', e.nombre, e.cedula || '', Number(l.neto).toFixed(2), `PL-${P.id}`]; })]);
+  };
+}
+function pasosPlanilla(p) {
+  const pasos = [['Elaborada', p.creado_en, p.creado_por], ['Enviada', p.enviado_en], ['Aprobada', p.aprobado_en, p.aprobado_por]];
+  if (p.estado === 'anulada') pasos.push(['Anulada', p.anulado_en, p.anulado_por]);
+  return `<div style="display:flex;flex-wrap:wrap;margin:6px 0 4px">${pasos.map(([t, f, u], i) => `
+    <div style="flex:1;min-width:110px;text-align:center;opacity:${f ? 1 : .45}">
+      <div style="width:26px;height:26px;border-radius:50%;margin:0 auto 6px;display:grid;place-items:center;font-size:13px;font-weight:800;background:${f ? (t === 'Anulada' ? 'var(--error)' : 'var(--azul)') : 'var(--borde)'};color:#fff">${f ? '✓' : i + 1}</div>
+      <div style="font-weight:700;font-size:13px;color:var(--titulo)">${t}</div>
+      <div class="muted" style="font-size:11.5px">${f ? fechaHora(f) : ''}${u ? '<br>' + esc(nombrePerfil(u)) : ''}</div></div>`).join('')}</div>`;
+}
+function modalNovedades(P, eid, lista, C, editable) {
+  const e = empleadoPorId(eid) || {};
+  const conc = id => C.find(c => c.id === id);
+  const d = abrirModal(`<h2>Novedades · ${esc(e.nombre)}</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 10px">Ingresos (bonos, viáticos) y deducciones (préstamos, adelantos, embargos) de este período. No hay horas extra: los días extra se compensan en vacaciones.</p>
+    ${lista.length ? `<table><thead><tr><th>Concepto</th><th>Descripción</th><th class="num">Monto</th><th></th></tr></thead><tbody>
+      ${lista.map(n => `<tr><td>${esc(conc(n.concepto_id)?.nombre)} <span class="etiqueta ${conc(n.concepto_id)?.tipo === 'ingreso' ? 'e-aprobado' : 'e-anulado'}">${conc(n.concepto_id)?.tipo === 'ingreso' ? 'Ingreso' : 'Deducción'}</span></td>
+        <td>${esc(n.descripcion || '')}</td><td class="num">${fmt(n.monto)}</td><td>${editable ? `<button type="button" class="btn sec chico" data-borrar="${n.id}">✕</button>` : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="muted">Sin novedades.</p>'}
+    ${editable ? `<h3 style="margin-top:14px">Agregar</h3><div class="rejilla">
+      <label class="campo">Concepto<select name="concepto_id">${C.filter(c => c.activo).map(c => `<option value="${c.id}">${c.tipo === 'ingreso' ? '＋' : '－'} ${esc(c.nombre)}</option>`).join('')}</select></label>
+      <label class="campo">Monto (C$)<input name="monto" class="monto" inputmode="decimal"></label>
+      <label class="campo ancho">Descripción<input name="descripcion" placeholder="Ej.: cuota 3 de 10"></label></div>` : ''}`,
+    async dl => {
+      if (!editable) return;
+      const monto = num($('[name=monto]', dl).value);
+      if (!(monto > 0)) { avisar('Escriba el monto', 'error'); return false; }
+      await q(sb.rpc('guardar_novedad', { p: { planilla_id: P.id, empleado_id: eid, concepto_id: Number($('[name=concepto_id]', dl).value), monto, descripcion: $('[name=descripcion]', dl).value } }));
+      avisar('Novedad agregada'); mostrar();
+    }, { textoGuardar: editable ? 'Agregar' : 'Cerrar' });
+  $$('[data-borrar]', d).forEach(b => b.onclick = async () => { try { await q(sb.rpc('eliminar_novedad', { p_id: Number(b.dataset.borrar) })); d.close(); avisar('Novedad eliminada'); mostrar(); } catch (e) { fallo(e); } });
+}
+function htmlPlanilla(P, L) {
+  const th = 'style="text-align:left;padding:4px;background:#0A2240;color:#fff;font-size:8.5pt"', thr = 'style="text-align:right;padding:4px;background:#0A2240;color:#fff;font-size:8.5pt"';
+  const td = 'style="padding:3px 4px;border-bottom:1px solid #ddd"', tdr = 'style="padding:3px 4px;border-bottom:1px solid #ddd;text-align:right"';
+  const s = k => L.reduce((a, l) => a + Number(l[k]), 0);
+  return `<div style="font-family:Raleway,Arial,sans-serif;font-size:8.5pt;color:#222">
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #00758F;padding-bottom:6px;margin-bottom:8px">
+      <img src="logo.png" style="height:36px"><div style="text-align:right"><div style="font-size:13pt;font-weight:800;color:#0A2240">${esc(P.descripcion)}</div>
+      <div>Del ${fecha(P.desde)} al ${fecha(P.hasta)} · ${ESTADOS_PLANILLA[P.estado]}</div></div></div>
+    <table style="width:100%;border-collapse:collapse"><thead><tr><th ${th}>Colaborador</th><th ${th}>Cédula</th><th ${th}>INSS</th><th ${thr}>Días</th><th ${thr}>Salario</th><th ${thr}>Otros ingr.</th><th ${thr}>Bruto</th>
+      <th ${thr}>INSS lab.</th><th ${thr}>IR</th><th ${thr}>Otras ded.</th><th ${thr}>Neto</th><th ${thr}>INSS pat.</th><th ${thr}>INATEC</th><th ${th}>Firma</th></tr></thead>
+    <tbody>${L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; return `<tr><td ${td}>${esc(e.nombre)}</td><td ${td}>${esc(e.cedula || '')}</td><td ${td}>${esc(e.inss_numero || '')}</td><td ${tdr}>${fmtQ(diasPagados(l))}</td>
+      <td ${tdr}>${fmt(l.salario_periodo)}</td><td ${tdr}>${fmtZ(l.ingresos)}</td><td ${tdr}>${fmt(l.bruto)}</td><td ${tdr}>${fmt(l.inss_laboral)}</td><td ${tdr}>${fmtZ(l.ir)}</td><td ${tdr}>${fmtZ(l.deducciones)}</td>
+      <td ${tdr}><b>${fmt(l.neto)}</b></td><td ${tdr}>${fmt(l.inss_patronal)}</td><td ${tdr}>${fmt(l.inatec)}</td><td ${td} style="width:70px"></td></tr>`; }).join('')}</tbody>
+    <tfoot><tr style="font-weight:700"><td ${td} colspan="4">Totales (${L.length})</td>${['salario_periodo', 'ingresos', 'bruto', 'inss_laboral', 'ir', 'deducciones', 'neto', 'inss_patronal', 'inatec'].map(k => `<td ${tdr}>${fmt(s(k))}</td>`).join('')}<td ${td}></td></tr></tfoot></table>
+    <div style="display:flex;gap:30px;margin-top:40px">${['Elaborado por', 'Revisado por', 'Aprobado por'].map((t, i) => `<div style="flex:1;text-align:center"><div style="border-top:1px solid #000;padding-top:3px">${t}</div><div style="color:#555">${esc(nombrePerfil(i === 0 ? P.creado_por : i === 2 ? P.aprobado_por : null))}</div></div>`).join('')}</div>
+    <div style="margin-top:8px;font-size:7.5pt;color:#777">Impreso el ${fechaHora(new Date())} · ${esc(ORGANIZACION)}</div></div>`;
+}
+function htmlColillas(P, L, N, C, sal) {
+  const conc = id => C.find(c => c.id === id);
+  const una = l => {
+    const e = empleadoPorId(l.empleado_id) || {}, nn = N.filter(n => n.empleado_id === l.empleado_id);
+    const ing = [[`Salario (${fmtQ(diasPagados(l))} días)`, l.salario_periodo], ...nn.filter(n => conc(n.concepto_id)?.tipo === 'ingreso').map(n => [conc(n.concepto_id).nombre + (n.descripcion ? ' · ' + n.descripcion : ''), n.monto])];
+    const ded = [['INSS laboral', l.inss_laboral], ['IR', l.ir], ...nn.filter(n => conc(n.concepto_id)?.tipo === 'deduccion').map(n => [conc(n.concepto_id).nombre + (n.descripcion ? ' · ' + n.descripcion : ''), n.monto])].filter(x => Number(x[1]));
+    const fila = ([t, v]) => `<tr><td style="padding:2px 0">${esc(t)}</td><td style="text-align:right">${fmt(v)}</td></tr>`;
+    const sv = sal.find(s => Number(s.empleado_id) === l.empleado_id);
+    return `<div style="border:1px solid #999;border-radius:6px;padding:10px 14px;margin-bottom:8mm;page-break-inside:avoid;font-family:Raleway,Arial,sans-serif;font-size:9pt;color:#222">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #00758F;padding-bottom:5px">
+        <img src="logo.png" style="height:30px"><div style="text-align:right"><b style="color:#0A2240;font-size:11pt">COLILLA DE PAGO</b><br>${esc(P.descripcion)}</div></div>
+      <table style="width:100%;margin:6px 0;font-size:9pt"><tr><td><b>${esc(e.nombre)}</b> · ${esc(e.cargo || '')}</td><td style="text-align:right">Cédula ${esc(e.cedula || '—')} · INSS ${esc(e.inss_numero || '—')}</td></tr>
+        <tr><td>Del ${fecha(P.desde)} al ${fecha(P.hasta)} · pago el ${fecha(P.fecha_pago)}</td><td style="text-align:right">Salario mensual C$ ${fmt(l.salario_mensual)}</td></tr></table>
+      <div style="display:flex;gap:18px">
+        <table style="flex:1;border-collapse:collapse"><tr><th style="text-align:left;border-bottom:1px solid #0A2240" colspan="2">Ingresos</th></tr>${ing.map(fila).join('')}
+          <tr style="font-weight:700"><td style="border-top:1px solid #999">Total devengado</td><td style="text-align:right;border-top:1px solid #999">${fmt(l.bruto)}</td></tr></table>
+        <table style="flex:1;border-collapse:collapse"><tr><th style="text-align:left;border-bottom:1px solid #0A2240" colspan="2">Deducciones</th></tr>${ded.map(fila).join('')}
+          <tr style="font-weight:700"><td style="border-top:1px solid #999">Total deducciones</td><td style="text-align:right;border-top:1px solid #999">${fmt(Number(l.inss_laboral) + Number(l.ir) + Number(l.deducciones))}</td></tr></table>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px">
+        <div style="font-size:8.5pt;color:#444">Saldo de vacaciones: <b>${fmtQ(r2(Number(sv?.saldo || 0)))} días</b></div>
+        <div style="font-size:12pt;font-weight:800;color:#0A2240">Neto a recibir: C$ ${fmt(l.neto)}</div></div>
+      <div style="display:flex;gap:20px;margin-top:22px;font-size:8.5pt"><div style="flex:2;border-top:1px solid #000;padding-top:2px">Recibí conforme</div><div style="flex:1;border-top:1px solid #000;padding-top:2px">Fecha</div></div>
+    </div>`;
+  };
+  return `<div>${L.map(una).join('')}</div>`;
+}
+
+// ---------- Vacaciones ----------
+let pestVac = null;
+async function vVacaciones(m) {
+  await cargarCatalogos(); await cargarEmpleados();
+  const [saldos, pend, movs] = await Promise.all([
+    q(sb.rpc('saldos_vacaciones')),
+    q(sb.from('vacaciones_movimientos').select('*').eq('tipo', 'dia_extra').eq('estado', 'pendiente').order('fecha')),
+    q(sb.from('vacaciones_movimientos').select('*').order('fecha', { ascending: false }).order('id', { ascending: false }).limit(400))
+  ]);
+  const ap = puede('vacaciones.aprobar'), ed = puede('planilla.editar');
+  if (!pestVac) pestVac = ap && pend.length ? 'extra' : 'saldos';
+  const sv = id => saldos.find(s => Number(s.empleado_id) === id) || {};
+  const activos = cache.empleados.filter(e => e.activo);
+  const NOMBRES = { saldos: 'Saldos', extra: 'Días extra por aprobar', movs: 'Movimientos' };
+  const cuenta = { saldos: activos.length, extra: pend.length, movs: movs.length };
+  let cuerpo = '';
+  if (pestVac === 'saldos') cuerpo = `<table><thead><tr><th>Colaborador</th><th>Lugar</th><th class="num">Saldo (días)</th><th class="num">Días extra por aprobar</th><th class="num">Tomadas este año</th></tr></thead>
+    <tbody>${activos.map(e => { const s = sv(e.id); return `<tr class="clic" data-emp="${e.id}"><td><b>${esc(e.nombre)}</b></td><td>${esc(e.lugar || '')}</td>
+      <td class="num"><b>${fmtQ(r2(Number(s.saldo || 0)))}</b></td><td class="num">${Number(s.extra_pendientes) ? fmtQ(s.extra_pendientes) : ''}</td><td class="num">${fmtQ(r2(Number(s.tomadas_anio || 0)))}</td></tr>`; }).join('')}</tbody></table>`;
+  else if (pestVac === 'extra') cuerpo = pend.length ? `<table><thead><tr><th>Fecha</th><th>Colaborador</th><th>Detalle</th><th>Origen</th><th></th></tr></thead>
+    <tbody>${pend.map(x => `<tr data-x="${x.id}"><td>${fecha(x.fecha)}</td><td><b>${esc(empleadoPorId(x.empleado_id)?.nombre)}</b></td><td>${esc(x.descripcion || '')}</td>
+      <td>${x.origen === 'marcaje' ? 'App de marcaje' : 'Registrado por ' + esc(nombrePerfil(x.creado_por))}</td>
+      <td style="white-space:nowrap">${ap ? '<button class="btn chico" data-ok>✓ Aprobar</button> <button class="btn sec chico" data-no>Rechazar</button>' : '<span class="muted">Espera a Administración</span>'}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="vacio"><span class="ilus">✓</span>No hay días extra esperando aprobación.</div>';
+  else cuerpo = `<table><thead><tr><th>Fecha</th><th>Colaborador</th><th>Movimiento</th><th>Detalle</th><th class="num">Días</th><th>Estado</th><th></th></tr></thead>
+    <tbody>${movs.map(x => `<tr data-x="${x.id}"><td>${fecha(x.fecha)}</td><td>${esc(empleadoPorId(x.empleado_id)?.nombre)}</td><td>${TIPOS_VAC[x.tipo]}</td><td class="muted">${esc(x.descripcion || '')}${x.motivo ? ' · ' + esc(x.motivo) : ''}</td>
+      <td class="num">${x.dias > 0 ? '+' : ''}${fmtQ(x.dias)}</td><td><span class="etiqueta e-${x.estado}">${ESTADOS_VAC[x.estado]}</span></td>
+      <td>${ed && x.origen === 'manual' && ['aprobado', 'pendiente'].includes(x.estado) ? '<button class="btn sec chico" data-anular>Anular</button>' : ''}</td></tr>`).join('')}</tbody></table>`;
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Vacaciones</h1><p>15 días por cada 6 meses (2.5 por mes) más los días extra que aprueba Administración</p></div>
+      <div class="acciones">${ed ? '<button class="btn" id="b-mov">+ Registrar movimiento</button>' : ''}</div></div>
+    <div class="pestanas">${Object.entries(NOMBRES).map(([k, v]) => `<a href="#" data-p="${k}" class="${pestVac === k ? 'activo' : ''}">${v}<span class="n">${cuenta[k]}</span></a>`).join('')}</div>
+    <div class="tarjeta"><div class="envoltura">${cuerpo}</div></div>`;
+  $$('[data-p]').forEach(a => a.onclick = e => { e.preventDefault(); pestVac = a.dataset.p; vVacaciones(m); });
+  $$('[data-emp]').forEach(tr => tr.onclick = () => { pestVac = 'movs'; vVacaciones(m); });
+  $$('[data-ok]').forEach(b => b.onclick = async () => { try { await q(sb.rpc('revisar_dia_extra', { p_id: Number(b.closest('tr').dataset.x), p_aprobar: true })); avisar('Día extra aprobado: se suma a vacaciones'); actualizarInsignias(); vVacaciones(m); } catch (e) { fallo(e); } });
+  $$('[data-no]').forEach(b => b.onclick = () => abrirModal('<h2>Rechazar día extra</h2><label class="campo">Motivo<textarea name="motivo" rows="3" required></textarea></label>',
+    async d => { await q(sb.rpc('revisar_dia_extra', { p_id: Number(b.closest('tr').dataset.x), p_aprobar: false, p_motivo: $('[name=motivo]', d).value })); avisar('Día extra rechazado'); actualizarInsignias(); vVacaciones(m); }, { textoGuardar: 'Rechazar' }));
+  $$('[data-anular]').forEach(b => b.onclick = () => abrirModal('<h2>Anular movimiento</h2><label class="campo">Motivo<textarea name="motivo" rows="3" required></textarea></label>',
+    async d => { await q(sb.rpc('anular_vacaciones', { p_id: Number(b.closest('tr').dataset.x), p_motivo: $('[name=motivo]', d).value })); avisar('Movimiento anulado'); vVacaciones(m); }, { textoGuardar: 'Anular' }));
+  if ($('#b-mov')) $('#b-mov').onclick = () => abrirModal(`<h2>Registrar movimiento de vacaciones</h2><div class="rejilla">
+      <label class="campo ancho">Colaborador<select name="empleado_id">${opcionesEmpleado()}</select></label>
+      <label class="campo">Tipo<select name="tipo"><option value="tomadas">Vacaciones tomadas</option><option value="dia_extra">Día extra trabajado (lo aprueba Administración)</option><option value="saldo_inicial">Saldo inicial (traído de AG Planilla)</option><option value="ajuste">Ajuste (+ o −)</option></select></label>
+      <label class="campo">Días<input name="dias" inputmode="decimal" value="1"></label>
+      <label class="campo">Fecha<input type="date" name="fecha" value="${hoy()}"></label>
+      <label class="campo ancho">Descripción<input name="descripcion" placeholder="Motivo o detalle"></label></div>`,
+    async d => {
+      const p = Object.fromEntries(new FormData($('form', d))); p.dias = num(p.dias);
+      if (!p.dias || isNaN(p.dias)) { avisar('Indique los días', 'error'); return false; }
+      await q(sb.rpc('registrar_vacaciones', { p })); avisar(p.tipo === 'dia_extra' ? 'Día extra registrado; espera aprobación de Administración' : 'Movimiento registrado'); actualizarInsignias(); vVacaciones(m);
+    });
+}
+
+// ---------- Configuración de planilla e integración con marcaje ----------
+async function vConfigPlanilla(m) {
+  await cargarCatalogos();
+  const [pars, tramos, conceptos, claves] = await Promise.all([
+    q(sb.from('planilla_parametros').select('*').order('vigente_desde', { ascending: false })),
+    q(sb.from('ir_tramos').select('*').order('vigente_desde', { ascending: false }).order('desde')),
+    q(sb.from('conceptos_planilla').select('*').order('tipo').order('nombre')),
+    q(sb.from('integracion_claves').select('*').order('id', { ascending: false }))
+  ]);
+  const vig = pars.find(p => p.vigente_desde <= hoy()) || pars.at(-1);
+  const vigIR = tramos.find(t => t.vigente_desde <= hoy())?.vigente_desde;
+  const tr = tramos.filter(t => t.vigente_desde === vigIR);
+  const cta = id => esc(etiquetaCuenta(cuentaPorId(id)));
+  const urlApi = CONFIG.url + '/rest/v1/rpc/recibir_marcaje';
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Configuración de planilla</h1><p>Tasas legales con fecha de vigencia, tabla del IR, conceptos y conexión con la app de marcaje</p></div></div>
+    <div class="aviso">Confirme estas tasas con el contador. Si la ley cambia, agregue una nueva vigencia en lugar de editar la actual: las planillas anteriores conservan sus cálculos.</div>
+    <div class="graficos" style="align-items:start">
+      <div class="tarjeta"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Tasas vigentes desde ${fecha(vig?.vigente_desde)}</h2><button class="btn sec chico" id="b-vig">+ Nueva vigencia</button></div>
+        ${vig ? `<table><tbody>
+          <tr><td>INSS laboral</td><td class="num"><b>${fmtQ(vig.inss_laboral)}%</b></td></tr>
+          <tr><td>INSS patronal</td><td class="num"><b>${fmtQ(vig.inss_patronal)}%</b></td></tr>
+          <tr><td>INATEC</td><td class="num"><b>${fmtQ(vig.inatec)}%</b></td></tr>
+          <tr><td>Techo mensual del INSS</td><td class="num">${vig.techo_inss ? 'C$ ' + fmt(vig.techo_inss) : 'Sin techo'}</td></tr>
+          <tr><td>Vacaciones por mes</td><td class="num">${fmtQ(vig.dias_vacaciones_mes)} días</td></tr>
+          <tr><td>Sueldos (gasto)</td><td>${cta(vig.cuenta_salarios_id)}</td></tr>
+          <tr><td>Aportes patronales (gasto)</td><td>${cta(vig.cuenta_patronal_id)}</td></tr>
+          <tr><td>INSS por pagar</td><td>${cta(vig.cuenta_inss_pagar_id)}</td></tr>
+          <tr><td>IR por pagar</td><td>${cta(vig.cuenta_ir_pagar_id)}</td></tr>
+          <tr><td>INATEC por pagar</td><td>${cta(vig.cuenta_inatec_pagar_id)}</td></tr>
+          <tr><td>Salarios por pagar</td><td>${cta(vig.cuenta_neto_pagar_id)}</td></tr></tbody></table>` : '<p>No hay parámetros.</p>'}
+        ${pars.length > 1 ? `<p class="muted" style="font-size:12.5px;margin:8px 0 0">Vigencias anteriores: ${pars.filter(p => p !== vig).map(p => fecha(p.vigente_desde)).join(', ')}</p>` : ''}</div>
+      <div class="tarjeta"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Tabla anual del IR</h2><button class="btn sec chico" id="b-ir">Editar</button></div>
+        <table><thead><tr><th class="num">Desde (C$)</th><th class="num">Hasta (C$)</th><th class="num">Base</th><th class="num">%</th></tr></thead>
+        <tbody>${tr.map(t => `<tr><td class="num">${fmt(t.desde)}</td><td class="num">${t.hasta ? fmt(t.hasta) : 'en adelante'}</td><td class="num">${fmt(t.base)}</td><td class="num">${fmtQ(t.porcentaje)}%</td></tr>`).join('')}</tbody></table>
+        <p class="muted" style="font-size:12.5px;margin:8px 0 0">Vigente desde ${fecha(vigIR)}. La base del período (salario − INSS) se proyecta al año, se aplica la tabla y se divide entre 24 o 12.</p></div>
+    </div>
+    <div class="tarjeta"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Conceptos de ingreso y deducción</h2><button class="btn sec chico" id="b-conc">+ Concepto</button></div>
+      <div class="envoltura"><table><thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>INSS</th><th>IR</th><th>Cuenta contable</th><th></th></tr></thead>
+      <tbody>${conceptos.map(c => `<tr class="clic" data-c="${c.id}"><td>${esc(c.codigo)}</td><td>${esc(c.nombre)}</td><td>${c.tipo === 'ingreso' ? 'Ingreso' : 'Deducción'}</td>
+        <td>${c.tipo === 'ingreso' ? (c.afecta_inss ? 'Sí' : 'No') : ''}</td><td>${c.tipo === 'ingreso' ? (c.afecta_ir ? 'Sí' : 'No') : ''}</td>
+        <td>${c.cuenta_id ? cta(c.cuenta_id) : '<span class="muted">Sueldos y salarios</span>'}</td><td>${c.activo ? '' : '<span class="etiqueta e-anulado">Inactivo</span>'}</td></tr>`).join('')}</tbody></table></div></div>
+    <div class="tarjeta" id="integracion"><h2>Conexión con la app de marcaje</h2>
+      <p style="margin:6px 0 12px">El marcaje envía cada día los colaboradores, las marcas y los permisos. Las vacaciones aprobadas se descuentan del saldo y cada marca en sábado, domingo o feriado llega como <b>día extra</b> para que Administración lo apruebe.</p>
+      <ol style="margin:0 0 12px;padding-left:20px;line-height:1.7">
+        <li>Cree una clave aquí y cópiela; solo se muestra una vez.</li>
+        <li>En el proyecto de Apps Script del marcaje agregue el archivo <code>PuenteContabilidad.gs</code> (está en la carpeta <code>integracion</code> del repositorio de Contabilidad AFC).</li>
+        <li>En Configuración del proyecto → Propiedades del script agregue <code>AFC_URL</code> = <code>${esc(urlApi)}</code>, <code>AFC_ANON</code> = la clave pública de la app y <code>AFC_CLAVE</code> = la clave creada.</li>
+        <li>Ejecute <code>enviarAContabilidad</code> una vez para autorizar y <code>activarEnvioDiario</code> para dejarlo automático.</li></ol>
+      <div class="acciones" style="margin-bottom:12px"><button class="btn" id="b-clave">+ Crear clave</button></div>
+      ${claves.length ? `<table><thead><tr><th>Nombre</th><th>Creada</th><th>Último envío</th><th>Resultado</th><th></th></tr></thead><tbody>
+        ${claves.map(k => `<tr><td>${esc(k.nombre)}</td><td>${fechaHora(k.creado_en)}</td><td>${k.ultimo_uso ? fechaHora(k.ultimo_uso) : '<span class="muted">Nunca</span>'}</td>
+          <td class="muted">${k.ultimo_resultado ? `${k.ultimo_resultado.empleados} colaboradores · ${k.ultimo_resultado.marcas} marcas · ${k.ultimo_resultado.permisos} permisos · ${k.ultimo_resultado.dias_extra_nuevos} días extra nuevos` : ''}</td>
+          <td>${k.activa ? `<button class="btn sec chico" data-desac="${k.id}">Desactivar</button>` : '<span class="etiqueta e-anulado">Desactivada</span>'}</td></tr>`).join('')}</tbody></table>` : ''}
+    </div>`;
+  const ctaSel = (name, sel, tipos) => `<select name="${name}">${cache.cuentas.filter(c => c.acepta_movimientos && c.activa && tipos.includes(c.tipo)).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(etiquetaCuenta(c))}</option>`).join('')}</select>`;
+  $('#b-vig').onclick = () => abrirModal(`<h2>Nueva vigencia de tasas</h2><p class="muted" style="font-size:13px;margin:0 0 10px">Se aplica a las planillas cuyo período termina desde esa fecha.</p><div class="rejilla">
+      <label class="campo">Vigente desde<input type="date" name="vigente_desde" value="${hoy()}" required></label>
+      <label class="campo">INSS laboral %<input name="inss_laboral" inputmode="decimal" value="${vig?.inss_laboral ?? 7}"></label>
+      <label class="campo">INSS patronal %<input name="inss_patronal" inputmode="decimal" value="${vig?.inss_patronal ?? 22.5}"></label>
+      <label class="campo">INATEC %<input name="inatec" inputmode="decimal" value="${vig?.inatec ?? 2}"></label>
+      <label class="campo">Techo mensual INSS (vacío = sin techo)<input name="techo_inss" inputmode="decimal" value="${vig?.techo_inss ?? ''}"></label>
+      <label class="campo">Vacaciones por mes (días)<input name="dias_vacaciones_mes" inputmode="decimal" value="${vig?.dias_vacaciones_mes ?? 2.5}"></label>
+      <label class="campo ancho">Sueldos (gasto)${ctaSel('cuenta_salarios_id', vig?.cuenta_salarios_id, ['gasto', 'costo'])}</label>
+      <label class="campo ancho">Aportes patronales (gasto)${ctaSel('cuenta_patronal_id', vig?.cuenta_patronal_id, ['gasto', 'costo'])}</label>
+      <label class="campo ancho">INSS por pagar${ctaSel('cuenta_inss_pagar_id', vig?.cuenta_inss_pagar_id, ['pasivo'])}</label>
+      <label class="campo ancho">IR por pagar${ctaSel('cuenta_ir_pagar_id', vig?.cuenta_ir_pagar_id, ['pasivo'])}</label>
+      <label class="campo ancho">INATEC por pagar${ctaSel('cuenta_inatec_pagar_id', vig?.cuenta_inatec_pagar_id, ['pasivo'])}</label>
+      <label class="campo ancho">Salarios por pagar${ctaSel('cuenta_neto_pagar_id', vig?.cuenta_neto_pagar_id, ['pasivo'])}</label></div>`,
+    async d => {
+      const f = Object.fromEntries(new FormData($('form', d)));
+      const v = { ...f }; ['inss_laboral', 'inss_patronal', 'inatec', 'dias_vacaciones_mes'].forEach(k => v[k] = num(f[k]));
+      v.techo_inss = f.techo_inss ? num(f.techo_inss) : null;
+      ['cuenta_salarios_id', 'cuenta_patronal_id', 'cuenta_inss_pagar_id', 'cuenta_ir_pagar_id', 'cuenta_inatec_pagar_id', 'cuenta_neto_pagar_id'].forEach(k => v[k] = Number(f[k]));
+      const existe = pars.find(p => p.vigente_desde === v.vigente_desde);
+      if (existe) await q(sb.from('planilla_parametros').update(v).eq('id', existe.id)); else await q(sb.from('planilla_parametros').insert(v));
+      avisar('Tasas guardadas'); vConfigPlanilla(m);
+    });
+  $('#b-ir').onclick = () => {
+    const filas = tr.length ? tr : [{}];
+    const fila = t => `<tr><td><input class="monto" data-k="desde" value="${t.desde ?? ''}"></td><td><input class="monto" data-k="hasta" value="${t.hasta ?? ''}" placeholder="sin límite"></td><td><input class="monto" data-k="base" value="${t.base ?? 0}"></td><td><input class="monto" data-k="porcentaje" value="${t.porcentaje ?? ''}"></td></tr>`;
+    const d = abrirModal(`<h2>Tabla anual del IR</h2><label class="campo">Vigente desde<input type="date" name="vig" value="${vigIR || hoy()}"></label>
+      <table class="lineas" style="margin-top:10px"><thead><tr><th>Desde (exclusivo)</th><th>Hasta</th><th>Impuesto base</th><th>%</th></tr></thead><tbody id="ir-f">${filas.map(fila).join('')}</tbody></table>
+      <button type="button" class="btn sec chico" id="ir-mas" style="margin-top:8px">+ Tramo</button>
+      <p class="muted" style="font-size:12.5px">Si cambia la fecha, se crea una tabla nueva y la anterior se conserva para planillas pasadas.</p>`,
+      async dl => {
+        const vg = $('[name=vig]', dl).value;
+        const nuevos = $$('#ir-f tr', dl).map(r => Object.fromEntries($$('input', r).map(i => [i.dataset.k, i.value === '' ? null : num(i.value)]))).filter(t => t.desde !== null && t.porcentaje !== null)
+          .map(t => ({ ...t, base: t.base || 0, vigente_desde: vg }));
+        if (!nuevos.length) { avisar('Agregue al menos un tramo', 'error'); return false; }
+        for (const t of tramos.filter(t => t.vigente_desde === vg)) await q(sb.from('ir_tramos').delete().eq('id', t.id));
+        await q(sb.from('ir_tramos').insert(nuevos));
+        avisar('Tabla del IR guardada'); vConfigPlanilla(m);
+      });
+    $('#ir-mas', d).onclick = () => $('#ir-f', d).insertAdjacentHTML('beforeend', fila({}));
+  };
+  const modalConcepto = c => abrirModal(`<h2>${c ? 'Concepto' : 'Nuevo concepto'}</h2><div class="rejilla">
+      <label class="campo">Código<input name="codigo" value="${esc(c?.codigo || '')}" required></label>
+      <label class="campo">Nombre<input name="nombre" value="${esc(c?.nombre || '')}" required></label>
+      <label class="campo">Tipo<select name="tipo"><option value="ingreso" ${c?.tipo === 'ingreso' ? 'selected' : ''}>Ingreso</option><option value="deduccion" ${c?.tipo === 'deduccion' ? 'selected' : ''}>Deducción</option></select></label>
+      <label class="campo chk"><input type="checkbox" name="afecta_inss" ${!c || c.afecta_inss ? 'checked' : ''}> Ingreso cotiza INSS</label>
+      <label class="campo chk"><input type="checkbox" name="afecta_ir" ${!c || c.afecta_ir ? 'checked' : ''}> Ingreso paga IR</label>
+      <label class="campo ancho">Cuenta contable (deducción: obligatoria; ingreso: vacío = sueldos)<select name="cuenta_id"><option value="">—</option>${cache.cuentas.filter(x => x.acepta_movimientos && x.activa).map(x => `<option value="${x.id}" ${x.id === c?.cuenta_id ? 'selected' : ''}>${esc(etiquetaCuenta(x))}</option>`).join('')}</select></label>
+      <label class="campo chk"><input type="checkbox" name="activo" ${!c || c.activo ? 'checked' : ''}> Activo</label></div>`,
+    async d => {
+      const f = new FormData($('form', d));
+      const v = { codigo: String(f.get('codigo')).trim().toUpperCase(), nombre: String(f.get('nombre')).trim(), tipo: f.get('tipo'), afecta_inss: f.get('afecta_inss') === 'on', afecta_ir: f.get('afecta_ir') === 'on', cuenta_id: Number(f.get('cuenta_id')) || null, activo: f.get('activo') === 'on' };
+      if (v.tipo === 'deduccion' && !v.cuenta_id) { avisar('Una deducción necesita su cuenta contable', 'error'); return false; }
+      if (c) await q(sb.from('conceptos_planilla').update(v).eq('id', c.id)); else await q(sb.from('conceptos_planilla').insert(v));
+      avisar('Concepto guardado'); vConfigPlanilla(m);
+    });
+  $('#b-conc').onclick = () => modalConcepto();
+  $$('[data-c]').forEach(r => r.onclick = () => modalConcepto(conceptos.find(c => c.id === Number(r.dataset.c))));
+  $('#b-clave').onclick = async () => {
+    try {
+      const k = await q(sb.rpc('crear_clave_integracion', { p_nombre: 'App de marcaje' }));
+      abrirModal(`<h2>Clave de la app de marcaje</h2><p>Cópiela ahora y péguela en la propiedad <code>AFC_CLAVE</code> del Apps Script. <b>No se vuelve a mostrar.</b></p>
+        <input id="k-val" readonly value="${esc(k)}" style="width:100%;font-family:monospace;font-size:13px"><p class="muted" style="font-size:12.5px">Si se pierde o se filtra, desactívela y cree otra.</p>`,
+        async () => { vConfigPlanilla(m); }, { textoGuardar: 'Ya la copié', extraIzq: '<button type="button" class="btn sec" id="k-copiar">Copiar</button>' });
+      $('#k-copiar').onclick = () => { $('#k-val').select(); try { navigator.clipboard.writeText(k); avisar('Clave copiada'); } catch { document.execCommand('copy'); } };
+    } catch (e) { fallo(e); }
+  };
+  $$('[data-desac]').forEach(b => b.onclick = async () => { if (!confirm('¿Desactivar esta clave? El marcaje dejará de enviar datos hasta que configure otra.')) return; try { await q(sb.rpc('desactivar_clave_integracion', { p_id: Number(b.dataset.desac) })); avisar('Clave desactivada'); vConfigPlanilla(m); } catch (e) { fallo(e); } });
+}
 
 iniciar();
 </script>
