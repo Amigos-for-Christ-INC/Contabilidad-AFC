@@ -6,7 +6,7 @@
  * Permisos). No modifica la hoja: solo lee y envía.
  *
  * Configuración del proyecto → Propiedades del script:
- *   AFC_URL    https://qrjhpkicapbtnzagbnsx.supabase.co/rest/v1/rpc/recibir_marcaje
+ *   AFC_URL    (opcional) si no está, usa la de Contabilidad AFC
  *   AFC_ANON   la clave pública (publishable) de Supabase que usa la app
  *   AFC_CLAVE  la clave creada en Contabilidad AFC → Configuración de planilla
  *
@@ -17,8 +17,8 @@ const AFC_DIAS_ATRAS = 45;   // marcas y permisos de los últimos 45 días
 
 function enviarAContabilidad() {
   const p = PropertiesService.getScriptProperties();
-  const url = p.getProperty('AFC_URL'), anon = p.getProperty('AFC_ANON'), clave = p.getProperty('AFC_CLAVE');
-  if (!url || !anon || !clave) throw new Error('Faltan las propiedades AFC_URL, AFC_ANON o AFC_CLAVE');
+  const url = p.getProperty('AFC_URL') || 'https://qrjhpkicapbtnzagbnsx.supabase.co/rest/v1/rpc/recibir_marcaje', anon = p.getProperty('AFC_ANON'), clave = p.getProperty('AFC_CLAVE');
+  if (!anon || !clave) throw new Error('Faltan las propiedades AFC_ANON o AFC_CLAVE');
 
   const tz = Session.getScriptTimeZone();
   const desde = Utilities.formatDate(new Date(Date.now() - AFC_DIAS_ATRAS * 86400000), tz, 'yyyy-MM-dd');
