@@ -16,6 +16,7 @@ App web de contabilidad, cheques, inventario y planilla para Amigos for Christ s
 | `005-pago-marcaje.sql` | Migración 5: consulta "Mi pago" para la app de marcaje (cada trabajador ve solo lo suyo). |
 | `006-pago-planilla.sql` | Migración 6: pago de planilla (asiento Salarios por pagar contra banco) y colillas por correo. |
 | `007-aguinaldo-liquidacion-activos.sql` | Migración 7: aguinaldo, liquidaciones (prestaciones e indemnización art. 45) y activos fijos con depreciación mensual. |
+| `008-plan-ahorro.sql` | Migración 8: plan de ahorro (porcentaje del colaborador, aporte de AFC, retiro cada 5 años y devolución en la liquidación). |
 | `integracion/PuenteContabilidad.gs` | Archivo para el Apps Script de la app de marcaje: envía cada noche colaboradores, marcas y permisos. |
 | `index.html` | La app web completa (no necesita compilar nada). |
 | `logo.png`, `logo-blanco.png` | Logos oficiales de Amigos for Christ. |
@@ -136,3 +137,13 @@ Ejecútelas desde la carpeta donde están los `.sql`.
 - **Liquidación:** Planillas → *Calcular liquidación* (o desde la ficha del colaborador). Calcula salario pendiente, vacaciones no gozadas, aguinaldo proporcional e indemnización por antigüedad (art. 45: un mes por año los tres primeros años, 20 días desde el cuarto, proporcional, máximo cinco meses). El motivo define si hay indemnización y se puede cambiar. Al aprobarla, el colaborador queda inactivo y sus vacaciones en cero. El IR se calcula como un mes; el contador debe revisarlo si la persona tuvo otros ingresos en el año.
 - **Activos fijos:** registro de bienes con costo, valor residual y vida útil (sugerida del Reglamento de la Ley 822, art. 34). Cada mes, *Depreciación mensual* registra el asiento gasto contra depreciación acumulada. La baja (venta, descarte, robo o donación) registra la pérdida o ganancia. Permisos `activos.ver` y `activos.editar` (el rol Contador los recibe).
 - Pruebas: `pruebas/prueba-007.mjs`.
+
+### Plan de ahorro (008)
+
+- En la ficha del colaborador se pone el **porcentaje que ahorra** (0 = no participa) y la fecha en que entró al plan.
+- En cada planilla quincenal o mensual se le descuenta ese porcentaje y **AFC aporta siempre el 5%**, ambos sobre el salario de la ficha (los días sin goce no lo rebajan). El 5% y los años de retiro se cambian en Configuración de planilla.
+- Contabilidad: lo descontado y el aporte de AFC van a *Plan de ahorro de colaboradores por pagar* (pasivo); el aporte de AFC es gasto.
+- **Retiro cada 5 años:** en *Plan de ahorro* aparece "Disponible" y quien aprueba planillas registra la entrega (asiento contra el banco).
+- **Al salir:** la liquidación devuelve todo el saldo (lo suyo y lo de AFC), sin INSS ni IR.
+- Saldos que ya traían de AG Planilla: botón *Saldo inicial*.
+- Pruebas: `pruebas/prueba-008.mjs`.

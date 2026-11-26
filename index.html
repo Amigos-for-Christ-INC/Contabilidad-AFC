@@ -573,7 +573,7 @@ const MENU = [
   ['centros', 'Centros de costo', 'contabilidad.ver'], ['tipos-cambio', 'Tipos de cambio', 'contabilidad.ver'],
   ['g', 'Reportes'], ['mayor', 'Libro mayor', 'contabilidad.ver'], ['balanza', 'Balanza de comprobación', 'contabilidad.ver'], ['estados', 'Estados financieros', 'contabilidad.ver'],
   ['g', 'Bancos'], ['cheques', 'Cheques', 'bancos.ver'], ['bancos', 'Cuentas bancarias', 'bancos.ver'],
-  ['g', 'Planilla'], ['planillas', 'Planillas', 'planilla.ver'], ['colaboradores', 'Colaboradores', 'planilla.ver'], ['vacaciones', 'Vacaciones', 'planilla.ver'],
+  ['g', 'Planilla'], ['planillas', 'Planillas', 'planilla.ver'], ['colaboradores', 'Colaboradores', 'planilla.ver'], ['vacaciones', 'Vacaciones', 'planilla.ver'], ['ahorro', 'Plan de ahorro', 'planilla.ver'],
   ['vacaciones', 'Días extra y vacaciones', 'vacaciones.aprobar'], ['config-planilla', 'Configuración de planilla', 'planilla.config'],
   ['g', 'Activos fijos'], ['activos', 'Activos', 'activos.ver'], ['depreciacion', 'Depreciación mensual', 'activos.ver'],
   ['g', 'Inventario'], ['existencias', 'Existencias', 'inventario.ver'], ['movimientos', 'Movimientos', 'inventario.ver'], ['kardex', 'Kardex', 'inventario.ver'],
@@ -606,6 +606,7 @@ const ICONOS = {
   bitacora: 'M12 8v4l3 2M12 3a9 9 0 1 0 9 9',
   planillas: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
   activos: 'M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6M9 11h.01M15 11h.01',
+  ahorro: 'M19 9a7 6 0 1 0-1 8l1 3h-3l-1-1.5M5 11H3M12 7h2M8 3l2 3',
   depreciacion: 'M3 4v16h18M7 8l4 4 3-3 6 6M20 11v4h-4',
   colaboradores: 'M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0zM4 21a8 8 0 0 1 16 0',
   vacaciones: 'M12 3v2M12 19v2M5 5l1.5 1.5M17.5 17.5L19 19M3 12h2M19 12h2M5 19l1.5-1.5M17.5 6.5L19 5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
@@ -657,7 +658,7 @@ const RUTAS = {
   roles: vRoles, existencias: vExistencias, movimientos: vMovimientos, movimiento: vMovimiento, kardex: vKardex,
   productos: vProductos, bodegas: vBodegas, bancos: vBancos, cheques: vCheques, cheque: vCheque,
   planillas: vPlanillas, planilla: vPlanilla, colaboradores: vColaboradores, colaborador: vColaboradores, vacaciones: vVacaciones, 'config-planilla': vConfigPlanilla,
-  activos: vActivos, depreciacion: vDepreciacion, liquidacion: vLiquidacion
+  activos: vActivos, depreciacion: vDepreciacion, liquidacion: vLiquidacion, ahorro: vAhorro
 };
 const PADRE_RUTA = { asiento: 'asientos', movimiento: 'movimientos', cheque: 'cheques', planilla: 'planillas', colaborador: 'colaboradores', liquidacion: 'planillas' };
 const ESQUELETO = `<div class="esqueleto"><div class="esq" style="height:56px;width:40%"></div><div class="kpis" style="margin:0">${'<div class="esq" style="height:96px"></div>'.repeat(4)}</div><div class="esq" style="height:280px"></div></div>`;
@@ -2629,6 +2630,8 @@ function modalColaborador(m, e = null) {
       <label class="campo">Pago<select name="tipo_pago" ${ro}><option value="quincenal" ${v.tipo_pago !== 'mensual' ? 'selected' : ''}>Quincenal</option><option value="mensual" ${v.tipo_pago === 'mensual' ? 'selected' : ''}>Mensual</option></select></label>
       <label class="campo">Salario mensual (C$)<input name="salario_mensual" class="monto" inputmode="decimal" value="${Number(v.salario_mensual) ? fmt(v.salario_mensual) : ''}" ${ro}></label>
       <label class="campo">Cuenta BANPRO<input name="cuenta_banco" value="${esc(v.cuenta_banco || '')}" ${ro}></label>
+      <label class="campo">Plan de ahorro (% del salario)<input name="ahorro_porcentaje" inputmode="decimal" value="${Number(v.ahorro_porcentaje) ? fmtQ(v.ahorro_porcentaje) : ''}" placeholder="0 = no participa" ${ro}></label>
+      <label class="campo">En el plan desde<input type="date" name="ahorro_inicio" value="${v.ahorro_inicio || ''}" ${ro}></label>
       <label class="campo chk"><input type="checkbox" name="activo" ${v.activo ? 'checked' : ''} ${ro}> Activo</label>
       <label class="campo ancho">Notas<textarea name="notas" rows="2" ${ro}>${esc(v.notas || '')}</textarea></label>
     </div>
@@ -2640,7 +2643,8 @@ function modalColaborador(m, e = null) {
     if (isNaN(sal) || sal < 0) { avisar('Revise el salario', 'error'); return false; }
     const val = { nombre: g('nombre'), correo: g('correo')?.toLowerCase() || null, codigo: g('codigo'), cedula: g('cedula'), inss_numero: g('inss_numero'), cargo: g('cargo'),
       lugar: g('lugar'), lider_correo: g('lider_correo')?.toLowerCase() || null, centro_costo_id: Number(f.get('centro_costo_id')) || null, fecha_ingreso: g('fecha_ingreso'),
-      fecha_baja: g('fecha_baja'), tipo_pago: f.get('tipo_pago'), salario_mensual: sal, cuenta_banco: g('cuenta_banco'), activo: f.get('activo') === 'on', notas: g('notas') };
+      fecha_baja: g('fecha_baja'), tipo_pago: f.get('tipo_pago'), salario_mensual: sal, cuenta_banco: g('cuenta_banco'), activo: f.get('activo') === 'on',
+      ahorro_porcentaje: num(f.get('ahorro_porcentaje')) || 0, ahorro_inicio: g('ahorro_inicio') || (num(f.get('ahorro_porcentaje')) > 0 ? ([g('fecha_ingreso'), hoy()].filter(Boolean).sort().at(-1)) : null), notas: g('notas') };
     if (e) await q(sb.from('empleados').update(val).eq('id', e.id)); else await q(sb.from('empleados').insert(val));
     avisar('Colaborador guardado'); await cargarEmpleados(); vColaboradores(m);
   }, { textoGuardar: ed ? 'Guardar' : 'Cerrar' });
@@ -2705,12 +2709,14 @@ async function vPlanilla(m, arg) {
     q(sb.from('conceptos_planilla').select('*').order('tipo').order('nombre')),
     q(sb.rpc('saldos_vacaciones'))
   ]);
+  const AHO = Object.fromEntries((await q(sb.rpc('resumen_ahorro')).catch(() => [])).map(x => [Number(x.empleado_id), Number(x.saldo)]));
   L.sort((a, b) => (empleadoPorId(a.empleado_id)?.nombre || '').localeCompare(empleadoPorId(b.empleado_id)?.nombre || ''));
   const editable = P.estado === 'borrador' && puede('planilla.editar');
   const puedeAprobar = P.estado === 'por_aprobar' && puede('planilla.aprobar') && P.creado_por !== yo.id;
   const nov = eid => N.filter(n => n.empleado_id === eid);
   const conc = id => C.find(c => c.id === id);
-  const costo = Number(P.total_bruto) + Number(P.total_inss_patronal) + Number(P.total_inatec);
+  const costo = Number(P.total_bruto) + Number(P.total_inss_patronal) + Number(P.total_inatec) + Number(P.total_ahorro_afc || 0);
+  const conAhorro = L.some(l => Number(l.ahorro) || Number(l.ahorro_afc));
   m.innerHTML = `
     <div class="cabecera no-imprimir"><div><h1>${esc(P.descripcion)} <span class="etiqueta e-${P.estado}" style="vertical-align:middle;font-size:13px">${ESTADOS_PLANILLA[P.estado]}</span></h1>
       <p><a href="#planillas">← Volver a planillas</a> · ${TIPOS_PL[P.tipo]} del ${fecha(P.desde)} al ${fecha(P.hasta)} · pago el ${fecha(P.fecha_pago)}</p></div>
@@ -2734,23 +2740,24 @@ async function vPlanilla(m, arg) {
     ${P.estado === 'anulada' ? `<div class="aviso error">Anulada por ${esc(nombrePerfil(P.anulado_por))}: ${esc(P.motivo_anulacion)}</div>` : ''}
     <div class="kpis">
       <div class="kpi"><div class="et">Colaboradores</div><div class="val navy">${contar(P.empleados, 0)}</div></div>
-      <div class="kpi"><div class="et">Total devengado</div><div class="val">C$ ${contar(P.total_bruto)}</div><div class="det">INSS ${fmt(P.total_inss_laboral)} · IR ${fmt(P.total_ir)} · otras ${fmt(P.total_deducciones)}</div></div>
+      <div class="kpi"><div class="et">Total devengado</div><div class="val">C$ ${contar(P.total_bruto)}</div><div class="det">INSS ${fmt(P.total_inss_laboral)} · IR ${fmt(P.total_ir)} · otras ${fmt(P.total_deducciones)}${Number(P.total_ahorro) ? ' · ahorro ' + fmt(P.total_ahorro) : ''}</div></div>
       <div class="kpi"><div class="et">Neto a pagar</div><div class="val">C$ ${contar(P.total_neto)}</div></div>
-      <div class="kpi"><div class="et">Costo total para AFC</div><div class="val navy">C$ ${contar(costo)}</div><div class="det">INSS patronal ${fmt(P.total_inss_patronal)} · INATEC ${fmt(P.total_inatec)}</div></div>
+      <div class="kpi"><div class="et">Costo total para AFC</div><div class="val navy">C$ ${contar(costo)}</div><div class="det">INSS patronal ${fmt(P.total_inss_patronal)} · INATEC ${fmt(P.total_inatec)}${Number(P.total_ahorro_afc) ? ' · aporte al ahorro ' + fmt(P.total_ahorro_afc) : ''}</div></div>
     </div>
     ${P.estado !== 'borrador' ? `<div class="tarjeta"><h2>Seguimiento</h2>${pasosPlanilla(P)}${P.asiento_id && puede('contabilidad.ver') ? `<p style="margin:8px 0 0"><a href="#asiento/${P.asiento_id}">Ver asiento contable</a>${P.asiento_anulacion_id ? ` · <a href="#asiento/${P.asiento_anulacion_id}">asiento de anulación</a>` : ''}</p>` : ''}</div>` : ''}
     <div class="tarjeta">
       <div class="envoltura"><table id="t-pl">
-        <thead><tr><th>Colaborador</th><th class="num">Días sin goce</th><th class="num">${P.tipo === 'aguinaldo' ? 'Días del período' : 'Días pagados'}</th><th class="num">${nombreSalario(P)}</th><th class="num">${P.tipo === 'liquidacion' ? 'Prestaciones' : 'Otros ingresos'}</th><th class="num">INSS</th><th class="num">IR</th><th class="num">Otras deducc.</th><th class="num">Neto</th><th></th></tr></thead>
+        <thead><tr><th>Colaborador</th><th class="num">Días sin goce</th><th class="num">${P.tipo === 'aguinaldo' ? 'Días del período' : 'Días pagados'}</th><th class="num">${nombreSalario(P)}</th><th class="num">${P.tipo === 'liquidacion' ? 'Prestaciones' : 'Otros ingresos'}</th><th class="num">INSS</th><th class="num">IR</th><th class="num">Otras deducc.</th>${conAhorro ? '<th class="num" title="Lo que ahorra el colaborador; entre paréntesis, el aporte de AFC">Ahorro</th>' : ''}<th class="num">Neto</th><th></th></tr></thead>
         <tbody>${L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; const nn = nov(l.empleado_id); return `<tr data-l="${l.id}" data-e="${l.empleado_id}">
           <td><b>${esc(e.nombre || '¿?')}</b><br><span class="muted" style="font-size:12px">${esc(e.cargo || '')}${l.centro_costo_id ? ' · ' + esc(centroCod(l.centro_costo_id)) : ''} · ${fmt(l.salario_mensual)}/mes</span></td>
           <td class="num">${editable ? `<input class="monto dnp" style="width:60px" inputmode="decimal" value="${Number(l.dias_no_pagados) ? fmtQ(l.dias_no_pagados) : ''}" placeholder="0" title="Permisos sin goce, faltas o suspensiones">` : fmtZ(l.dias_no_pagados)}</td>
           <td class="num">${fmtQ(diasPagados(l, P))}</td>
           <td class="num">${fmt(l.salario_periodo)}</td><td class="num">${fmtZ(l.ingresos)}</td><td class="num">${fmt(l.inss_laboral)}</td><td class="num">${fmtZ(l.ir)}</td><td class="num">${fmtZ(l.deducciones)}</td>
+          ${conAhorro ? `<td class="num">${Number(l.ahorro) ? fmt(l.ahorro) + `<br><span class="muted" style="font-size:12px">${fmtQ(l.ahorro_porcentaje)}% · AFC ${fmt(l.ahorro_afc)}</span>` : '–'}</td>` : ''}
           <td class="num"><b class="${Number(l.neto) < 0 ? 'dif-mal' : ''}">${fmt(l.neto)}</b></td>
           <td style="white-space:nowrap"><button class="btn sec chico" data-nov title="Bonos, viáticos, préstamos y otras deducciones">${nn.length ? `Novedades (${nn.length})` : (editable ? '+ Novedad' : '')}</button>${editable ? ' <button class="btn sec chico" data-quitar title="Quitar de esta planilla">✕</button>' : ''}</td></tr>`; }).join('')}
           <tr class="total"><td>Totales</td><td></td><td></td><td class="num">${fmt(L.reduce((s, l) => s + Number(l.salario_periodo), 0))}</td><td class="num">${fmt(L.reduce((s, l) => s + Number(l.ingresos), 0))}</td>
-            <td class="num">${fmt(P.total_inss_laboral)}</td><td class="num">${fmt(P.total_ir)}</td><td class="num">${fmt(P.total_deducciones)}</td><td class="num">${fmt(P.total_neto)}</td><td></td></tr></tbody></table></div>
+            <td class="num">${fmt(P.total_inss_laboral)}</td><td class="num">${fmt(P.total_ir)}</td><td class="num">${fmt(P.total_deducciones)}</td>${conAhorro ? `<td class="num">${fmt(P.total_ahorro)}</td>` : ''}<td class="num">${fmt(P.total_neto)}</td><td></td></tr></tbody></table></div>
       ${!L.length ? '<div class="vacio">No hay colaboradores en esta planilla. Revise que tengan salario y el tipo de pago correcto.</div>' : ''}
     </div>`;
   $$('[data-nov]').forEach(b => { if (!b.textContent) b.remove(); });
@@ -2786,10 +2793,10 @@ async function vPlanilla(m, arg) {
       <div class="rejilla"><label class="campo">Fecha<input type="date" name="f" min="${P.hasta}" value="${hoy() < P.hasta ? P.hasta : hoy()}"></label><label class="campo ancho">Motivo<textarea name="motivo" rows="3" required></textarea></label></div>`,
     async d => { await q(sb.rpc('anular_planilla', { p_id: P.id, p_motivo: $('[name=motivo]', d).value, p_fecha: $('[name=f]', d).value })); avisar('Planilla anulada'); mostrar(); }, { textoGuardar: 'Anular planilla' });
   const filasCsv = () => [['Colaborador', 'Cedula', 'INSS', 'Cargo', 'Centro', 'Salario mensual', 'Dias pagados', 'Salario', 'Otros ingresos', 'Bruto', 'INSS laboral', 'IR', 'Otras deducciones', 'Neto', 'INSS patronal', 'INATEC'],
-    ...L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; return [e.nombre, e.cedula, e.inss_numero, e.cargo, centroCod(l.centro_costo_id), l.salario_mensual, diasPagados(l, P), l.salario_periodo, l.ingresos, l.bruto, l.inss_laboral, l.ir, l.deducciones, l.neto, l.inss_patronal, l.inatec]; })];
+    ...L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; return [e.nombre, e.cedula, e.inss_numero, e.cargo, centroCod(l.centro_costo_id), l.salario_mensual, diasPagados(l, P), l.salario_periodo, l.ingresos, l.bruto, l.inss_laboral, l.ir, l.deducciones, l.ahorro, l.ahorro_afc, l.neto, l.inss_patronal, l.inatec]; })];
   $('#b-csv').onclick = () => csv(`planilla_${P.desde}_${P.hasta}.csv`, filasCsv());
   $('#b-imprimir').onclick = () => imprimirHTML(htmlPlanilla(P, L), 'size: letter landscape; margin: 10mm');
-  if ($('#b-colillas')) $('#b-colillas').onclick = () => imprimirHTML(htmlColillas(P, L, N, C, sal), 'size: letter; margin: 8mm');
+  if ($('#b-colillas')) $('#b-colillas').onclick = () => imprimirHTML(htmlColillas(P, L, N, C, sal, AHO), 'size: letter; margin: 8mm');
   const sinCuenta = () => L.filter(l => Number(l.neto) > 0 && !empleadoPorId(l.empleado_id)?.cuenta_banco);
   const archivoBanpro = () => {
     const sc = sinCuenta();
@@ -2894,20 +2901,21 @@ function htmlPlanilla(P, L) {
       <img src="logo.png" style="height:36px"><div style="text-align:right"><div style="font-size:13pt;font-weight:800;color:#0A2240">${esc(P.descripcion)}</div>
       <div>Del ${fecha(P.desde)} al ${fecha(P.hasta)} · ${ESTADOS_PLANILLA[P.estado]}</div></div></div>
     <table style="width:100%;border-collapse:collapse"><thead><tr><th ${th}>Colaborador</th><th ${th}>Cédula</th><th ${th}>INSS</th><th ${thr}>Días</th><th ${thr}>Salario</th><th ${thr}>Otros ingr.</th><th ${thr}>Bruto</th>
-      <th ${thr}>INSS lab.</th><th ${thr}>IR</th><th ${thr}>Otras ded.</th><th ${thr}>Neto</th><th ${thr}>INSS pat.</th><th ${thr}>INATEC</th><th ${th}>Firma</th></tr></thead>
+      <th ${thr}>INSS lab.</th><th ${thr}>IR</th><th ${thr}>Otras ded.</th><th ${thr}>Ahorro</th><th ${thr}>Neto</th><th ${thr}>INSS pat.</th><th ${thr}>INATEC</th><th ${th}>Firma</th></tr></thead>
     <tbody>${L.map(l => { const e = empleadoPorId(l.empleado_id) || {}; return `<tr><td ${td}>${esc(e.nombre)}</td><td ${td}>${esc(e.cedula || '')}</td><td ${td}>${esc(e.inss_numero || '')}</td><td ${tdr}>${fmtQ(diasPagados(l, P))}</td>
-      <td ${tdr}>${fmt(l.salario_periodo)}</td><td ${tdr}>${fmtZ(l.ingresos)}</td><td ${tdr}>${fmt(l.bruto)}</td><td ${tdr}>${fmt(l.inss_laboral)}</td><td ${tdr}>${fmtZ(l.ir)}</td><td ${tdr}>${fmtZ(l.deducciones)}</td>
+      <td ${tdr}>${fmt(l.salario_periodo)}</td><td ${tdr}>${fmtZ(l.ingresos)}</td><td ${tdr}>${fmt(l.bruto)}</td><td ${tdr}>${fmt(l.inss_laboral)}</td><td ${tdr}>${fmtZ(l.ir)}</td><td ${tdr}>${fmtZ(l.deducciones)}</td><td ${tdr}>${fmtZ(l.ahorro)}</td>
       <td ${tdr}><b>${fmt(l.neto)}</b></td><td ${tdr}>${fmt(l.inss_patronal)}</td><td ${tdr}>${fmt(l.inatec)}</td><td ${td} style="width:70px"></td></tr>`; }).join('')}</tbody>
-    <tfoot><tr style="font-weight:700"><td ${td} colspan="4">Totales (${L.length})</td>${['salario_periodo', 'ingresos', 'bruto', 'inss_laboral', 'ir', 'deducciones', 'neto', 'inss_patronal', 'inatec'].map(k => `<td ${tdr}>${fmt(s(k))}</td>`).join('')}<td ${td}></td></tr></tfoot></table>
+    <tfoot><tr style="font-weight:700"><td ${td} colspan="4">Totales (${L.length})</td>${['salario_periodo', 'ingresos', 'bruto', 'inss_laboral', 'ir', 'deducciones', 'ahorro', 'neto', 'inss_patronal', 'inatec'].map(k => `<td ${tdr}>${fmt(s(k))}</td>`).join('')}<td ${td}></td></tr></tfoot></table>
     <div style="display:flex;gap:30px;margin-top:40px">${['Elaborado por', 'Revisado por', 'Aprobado por'].map((t, i) => `<div style="flex:1;text-align:center"><div style="border-top:1px solid #000;padding-top:3px">${t}</div><div style="color:#555">${esc(nombrePerfil(i === 0 ? P.creado_por : i === 2 ? P.aprobado_por : null))}</div></div>`).join('')}</div>
     <div style="margin-top:8px;font-size:7.5pt;color:#777">Impreso el ${fechaHora(new Date())} · ${esc(ORGANIZACION)}</div></div>`;
 }
-function htmlColillas(P, L, N, C, sal) {
+function htmlColillas(P, L, N, C, sal, aho = {}) {
   const conc = id => C.find(c => c.id === id);
   const una = l => {
     const e = empleadoPorId(l.empleado_id) || {}, nn = N.filter(n => n.empleado_id === l.empleado_id);
     const ing = [[`${nombreSalario(P)} (${fmtQ(diasPagados(l, P))} días)`, l.salario_periodo], ...nn.filter(n => conc(n.concepto_id)?.tipo === 'ingreso').map(n => [conc(n.concepto_id).nombre + (n.descripcion ? ' · ' + n.descripcion : ''), n.monto])];
-    const ded = [['INSS laboral', l.inss_laboral], ['IR', l.ir], ...nn.filter(n => conc(n.concepto_id)?.tipo === 'deduccion').map(n => [conc(n.concepto_id).nombre + (n.descripcion ? ' · ' + n.descripcion : ''), n.monto])].filter(x => Number(x[1]));
+    const ded = [['INSS laboral', l.inss_laboral], ['IR', l.ir], ...nn.filter(n => conc(n.concepto_id)?.tipo === 'deduccion').map(n => [conc(n.concepto_id).nombre + (n.descripcion ? ' · ' + n.descripcion : ''), n.monto]),
+      [`Plan de ahorro (${fmtQ(l.ahorro_porcentaje)}%)`, l.ahorro]].filter(x => Number(x[1]));
     const fila = ([t, v]) => `<tr><td style="padding:2px 0">${esc(t)}</td><td style="text-align:right">${fmt(v)}</td></tr>`;
     const sv = sal.find(s => Number(s.empleado_id) === l.empleado_id);
     return `<div style="border:1px solid #999;border-radius:6px;padding:10px 14px;margin-bottom:8mm;page-break-inside:avoid;font-family:Raleway,Arial,sans-serif;font-size:9pt;color:#222">
@@ -2919,10 +2927,10 @@ function htmlColillas(P, L, N, C, sal) {
         <table style="flex:1;border-collapse:collapse"><tr><th style="text-align:left;border-bottom:1px solid #0A2240" colspan="2">Ingresos</th></tr>${ing.map(fila).join('')}
           <tr style="font-weight:700"><td style="border-top:1px solid #999">Total devengado</td><td style="text-align:right;border-top:1px solid #999">${fmt(l.bruto)}</td></tr></table>
         <table style="flex:1;border-collapse:collapse"><tr><th style="text-align:left;border-bottom:1px solid #0A2240" colspan="2">Deducciones</th></tr>${ded.map(fila).join('')}
-          <tr style="font-weight:700"><td style="border-top:1px solid #999">Total deducciones</td><td style="text-align:right;border-top:1px solid #999">${fmt(Number(l.inss_laboral) + Number(l.ir) + Number(l.deducciones))}</td></tr></table>
+          <tr style="font-weight:700"><td style="border-top:1px solid #999">Total deducciones</td><td style="text-align:right;border-top:1px solid #999">${fmt(Number(l.inss_laboral) + Number(l.ir) + Number(l.deducciones) + Number(l.ahorro || 0))}</td></tr></table>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px">
-        <div style="font-size:8.5pt;color:#444">Saldo de vacaciones: <b>${fmtQ(r2(Number(sv?.saldo || 0)))} días</b></div>
+        <div style="font-size:8.5pt;color:#444">Saldo de vacaciones: <b>${fmtQ(r2(Number(sv?.saldo || 0)))} días</b>${Number(l.ahorro_afc) ? `<br>Aporte de AFC a su ahorro: <b>C$ ${fmt(l.ahorro_afc)}</b>` : ''}${aho?.[l.empleado_id] ? `<br>Saldo en el plan de ahorro: <b>C$ ${fmt(aho[l.empleado_id])}</b>` : ''}</div>
         <div style="font-size:12pt;font-weight:800;color:#0A2240">Neto a recibir: C$ ${fmt(l.neto)}</div></div>
       <div style="display:flex;gap:20px;margin-top:22px;font-size:8.5pt"><div style="flex:2;border-top:1px solid #000;padding-top:2px">Recibí conforme</div><div style="flex:1;border-top:1px solid #000;padding-top:2px">Fecha</div></div>
     </div>`;
@@ -2983,6 +2991,7 @@ async function vLiquidacion(m, arg) {
           ${fila('Salario pendiente', `${fmtQ(r.dias_salario)} días`, r.salario)}
           ${fila('Vacaciones no gozadas', `${fmtQ(r.dias_vacaciones)} días`, r.vacaciones)}
           ${fila('Aguinaldo proporcional', `${fmtQ(r.dias_aguinaldo)} días desde el ${fecha(r.inicio_aguinaldo)}`, r.aguinaldo)}
+          ${Number(r.ahorro) ? fila('Plan de ahorro', 'Lo ahorrado más el aporte de AFC · no lleva INSS ni IR', r.ahorro) : ''}
           ${fila('Indemnización por antigüedad', r.indemniza ? `${fmtQ(r.dias_indemnizacion)} días · exenta de IR` : 'No corresponde por el motivo', r.indemniza ? r.indemnizacion : null)}
           ${fila('<b>Total devengado</b>', '', r.bruto, 'total')}
           ${fila('INSS laboral', 'Sobre salario y vacaciones', -r.inss)}
@@ -3201,6 +3210,79 @@ async function vDepreciacion(m, arg) {
   if (arg === 'nueva' && ed) nueva();
 }
 
+// ---------- Plan de ahorro ----------
+let pestAho = 'saldos';
+const TIPOS_AHO = { saldo_inicial_colaborador: 'Saldo inicial (colaborador)', saldo_inicial_afc: 'Saldo inicial (AFC)', aporte_colaborador: 'Ahorro del colaborador',
+  aporte_afc: 'Aporte de AFC', retiro: 'Retiro', ajuste: 'Ajuste' };
+async function vAhorro(m) {
+  await cargarCatalogos(); await cargarEmpleados();
+  const [res, movs, pars] = await Promise.all([
+    q(sb.rpc('resumen_ahorro')),
+    q(sb.from('ahorro_movimientos').select('*').order('fecha', { ascending: false }).order('id', { ascending: false }).limit(500)),
+    q(sb.from('planilla_parametros').select('ahorro_afc_pct,ahorro_anios_retiro,vigente_desde').order('vigente_desde', { ascending: false }).limit(1))
+  ]);
+  const par = pars[0] || { ahorro_afc_pct: 5, ahorro_anios_retiro: 5 };
+  const ed = puede('planilla.editar'), ap = puede('planilla.aprobar'), H = hoy();
+  res.sort((a, b) => (empleadoPorId(a.empleado_id)?.nombre || '').localeCompare(empleadoPorId(b.empleado_id)?.nombre || ''));
+  const part = res.filter(r => Number(r.porcentaje) > 0 && empleadoPorId(r.empleado_id)?.activo);
+  const s = k => res.reduce((x, r) => x + Number(r[k]), 0);
+  const listos = res.filter(r => Number(r.saldo) > 0 && r.proximo_retiro && r.proximo_retiro <= H);
+  const NOMBRES = { saldos: 'Saldos por colaborador', movs: 'Movimientos' };
+  m.innerHTML = `
+    <div class="cabecera"><div><h1>Plan de ahorro</h1><p>Cada colaborador elige su porcentaje; AFC aporta el ${fmtQ(par.ahorro_afc_pct)}% de su salario. Retiro cada ${par.ahorro_anios_retiro} años o al dejar de trabajar.</p></div>
+      <div class="acciones">${ed ? '<button class="btn sec" id="b-inicial">Saldo inicial</button>' : ''}<button class="btn sec" id="b-csv">CSV</button></div></div>
+    ${listos.length ? `<div class="aviso">${listos.length} colaborador(es) ya cumplieron ${par.ahorro_anios_retiro} años y pueden retirar su ahorro: ${listos.map(r => esc(empleadoPorId(r.empleado_id)?.nombre)).join(', ')}.</div>` : ''}
+    <div class="kpis">
+      <div class="kpi"><div class="et">Participan</div><div class="val navy">${contar(part.length, 0)}</div><div class="det">de ${cache.empleados.filter(e => e.activo).length} colaboradores activos</div></div>
+      <div class="kpi"><div class="et">Saldo total del plan</div><div class="val">C$ ${contar(s('saldo'))}</div><div class="det">Colaboradores ${fmt(s('saldo_colaborador'))} · AFC ${fmt(s('saldo_afc'))}${s('retirado') ? ' · retirado ' + fmt(s('retirado')) : ''}</div></div>
+      <div class="kpi"><div class="et">Ahorran al mes</div><div class="val">C$ ${contar(s('ahorro_mensual'))}</div></div>
+      <div class="kpi"><div class="et">Aporte de AFC al mes</div><div class="val navy">C$ ${contar(s('aporte_afc_mensual'))}</div></div>
+    </div>
+    <div class="pestanas">${Object.entries(NOMBRES).map(([k, v]) => `<a href="#" data-p="${k}" class="${pestAho === k ? 'activo' : ''}">${v}</a>`).join('')}</div>
+    <div class="tarjeta"><div class="envoltura">${pestAho === 'saldos' ? (res.length ? `<table>
+      <thead><tr><th>Colaborador</th><th class="num">%</th><th class="num">Ahorra al mes</th><th class="num">AFC al mes</th><th class="num">Aportó</th><th class="num">Aportó AFC</th><th class="num">Retirado</th><th class="num">Saldo</th><th>Próximo retiro</th><th></th></tr></thead>
+      <tbody>${res.map(r => { const e = empleadoPorId(r.empleado_id) || {}, listo = Number(r.saldo) > 0 && r.proximo_retiro <= H; return `<tr data-emp="${r.empleado_id}">
+        <td><b>${esc(e.nombre || '')}</b>${e.activo ? '' : ' <span class="etiqueta e-anulado">De baja</span>'}<br><span class="muted" style="font-size:12px">En el plan desde ${fecha(r.inicio)}</span></td>
+        <td class="num">${Number(r.porcentaje) ? fmtQ(r.porcentaje) + '%' : '–'}</td><td class="num">${fmtZ(r.ahorro_mensual)}</td><td class="num">${fmtZ(r.aporte_afc_mensual)}</td>
+        <td class="num">${fmt(r.saldo_colaborador)}</td><td class="num">${fmt(r.saldo_afc)}</td><td class="num">${fmtZ(r.retirado)}</td>
+        <td class="num"><b>${fmt(r.saldo)}</b></td>
+        <td>${r.proximo_retiro ? fecha(r.proximo_retiro) : ''}${listo ? ' <span class="etiqueta e-aprobado">Disponible</span>' : ''}</td>
+        <td>${ap && listo ? '<button class="btn chico" data-retirar>Entregar ahorro</button>' : ''}</td></tr>`; }).join('')}</tbody></table>`
+      : '<div class="vacio"><span class="ilus">🐷</span>Nadie participa todavía. En Colaboradores, ponga el porcentaje de ahorro en la ficha de cada persona.</div>')
+    : (movs.length ? `<table><thead><tr><th>Fecha</th><th>Colaborador</th><th>Movimiento</th><th>Detalle</th><th class="num">Monto</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${movs.map(x => `<tr><td>${fecha(x.fecha)}</td><td>${esc(empleadoPorId(x.empleado_id)?.nombre || '')}</td><td>${TIPOS_AHO[x.tipo]}</td>
+        <td class="muted">${esc(x.descripcion || '')}${x.referencia ? ' · ref. ' + esc(x.referencia) : ''}${x.motivo ? ' · ' + esc(x.motivo) : ''}</td>
+        <td class="num ${x.monto < 0 ? 'dif-mal' : ''}">${fmt(x.monto)}</td><td><span class="etiqueta e-${x.estado === 'aplicado' ? 'aprobado' : 'anulado'}">${x.estado === 'aplicado' ? 'Aplicado' : 'Anulado'}</span></td>
+        <td>${x.estado === 'aplicado' && !x.planilla_id && ((x.tipo === 'retiro' && ap) || (x.tipo !== 'retiro' && ed)) ? `<button class="btn sec chico" data-anular="${x.id}">Anular</button>` : ''}${x.asiento_id && puede('contabilidad.ver') ? ` <a href="#asiento/${x.asiento_id}">Asiento</a>` : ''}</td></tr>`).join('')}</tbody></table>`
+      : '<div class="vacio">Sin movimientos.</div>')}</div></div>
+    <p class="muted" style="font-size:12.5px">El ahorro y el aporte de AFC se calculan sobre el salario de la ficha y se registran al aprobar cada planilla. En la liquidación se devuelve todo el saldo.</p>`;
+  $$('[data-p]').forEach(a => a.onclick = ev => { ev.preventDefault(); pestAho = a.dataset.p; vAhorro(m); });
+  $('#b-csv').onclick = () => csv('plan_de_ahorro.csv', [['Colaborador', 'Porcentaje', 'Desde', 'Ahorro mensual', 'Aporte AFC mensual', 'Aportado colaborador', 'Aportado AFC', 'Retirado', 'Saldo', 'Ultimo retiro', 'Proximo retiro'],
+    ...res.map(r => [empleadoPorId(r.empleado_id)?.nombre, r.porcentaje, r.inicio, r.ahorro_mensual, r.aporte_afc_mensual, r.saldo_colaborador, r.saldo_afc, r.retirado, r.saldo, r.ultimo_retiro, r.proximo_retiro])]);
+  $$('[data-anular]').forEach(b => b.onclick = () => abrirModal(`<h2>Anular movimiento de ahorro</h2><label class="campo">Motivo<textarea name="motivo" rows="2" required></textarea></label>`,
+    async d => { await q(sb.rpc('anular_movimiento_ahorro', { p_id: Number(b.dataset.anular), p_motivo: $('[name=motivo]', d).value })); avisar('Movimiento anulado'); vAhorro(m); }, { textoGuardar: 'Anular' }));
+  if ($('#b-inicial')) $('#b-inicial').onclick = () => abrirModal(`<h2>Saldo inicial del plan de ahorro</h2>
+      <p class="muted" style="font-size:13px;margin:0 0 10px">Lo que cada colaborador ya tenía ahorrado antes de usar esta app (por ejemplo, en AG Planilla). No genera asiento: el saldo debe estar en el pasivo del asiento de apertura.</p>
+      <div class="rejilla"><label class="campo ancho">Colaborador<select name="e">${opcionesEmpleado()}</select></label>
+      <label class="campo">Fecha<input type="date" name="f" value="${H}"></label>
+      <label class="campo">Ahorrado por el colaborador (C$)<input name="c" class="monto" inputmode="decimal"></label>
+      <label class="campo">Aportado por AFC (C$)<input name="a" class="monto" inputmode="decimal"></label></div>`,
+    async d => { await q(sb.rpc('saldo_inicial_ahorro', { p_empleado: Number($('[name=e]', d).value), p_fecha: $('[name=f]', d).value, p_colaborador: num($('[name=c]', d).value), p_afc: num($('[name=a]', d).value) }));
+      avisar('Saldo inicial registrado'); vAhorro(m); });
+  $$('[data-retirar]').forEach(b => b.onclick = async () => {
+    const r = res.find(x => Number(x.empleado_id) === Number(b.closest('tr').dataset.emp)), e = empleadoPorId(r.empleado_id);
+    const ctas = cache.bancos.filter(c => c.activa && c.moneda === 'NIO');
+    abrirModal(`<h2>Entregar ahorro a ${esc(e.nombre)}</h2>
+      <p>Saldo a entregar: <b>C$ ${fmt(r.saldo)}</b>. Haga la transferencia o el cheque y registre aquí la referencia.</p>
+      <div class="rejilla"><label class="campo">Cuenta de donde sale<select name="cb">${ctas.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select></label>
+      <label class="campo">Fecha<input type="date" name="f" value="${H}"></label>
+      <label class="campo ancho">Referencia (transferencia o cheque)<input name="ref"></label></div>
+      <p class="muted" style="font-size:12.5px">Se registra el asiento (plan de ahorro por pagar contra el banco) y el saldo vuelve a cero; el siguiente retiro será en ${par.ahorro_anios_retiro} años.</p>`,
+    async d => { await q(sb.rpc('retirar_ahorro', { p_empleado: r.empleado_id, p_fecha: $('[name=f]', d).value, p_cuenta_bancaria: Number($('[name=cb]', d).value), p_referencia: $('[name=ref]', d).value }));
+      avisar('Retiro registrado y contabilizado'); vAhorro(m); }, { textoGuardar: 'Registrar retiro' });
+  });
+}
+
 // ---------- Vacaciones ----------
 let pestVac = null;
 async function vVacaciones(m) {
@@ -3284,7 +3366,11 @@ async function vConfigPlanilla(m) {
           <tr><td>INSS por pagar</td><td>${cta(vig.cuenta_inss_pagar_id)}</td></tr>
           <tr><td>IR por pagar</td><td>${cta(vig.cuenta_ir_pagar_id)}</td></tr>
           <tr><td>INATEC por pagar</td><td>${cta(vig.cuenta_inatec_pagar_id)}</td></tr>
-          <tr><td>Salarios por pagar</td><td>${cta(vig.cuenta_neto_pagar_id)}</td></tr></tbody></table>` : '<p>No hay parámetros.</p>'}
+          <tr><td>Salarios por pagar</td><td>${cta(vig.cuenta_neto_pagar_id)}</td></tr>
+          <tr><td>Prestaciones (aguinaldo, vacaciones e indemnización)</td><td>${cta(vig.cuenta_prestaciones_id)}</td></tr>
+          <tr><td>Plan de ahorro: aporte de AFC</td><td class="num"><b>${fmtQ(vig.ahorro_afc_pct)}%</b> · retiro cada ${vig.ahorro_anios_retiro} años</td></tr>
+          <tr><td>Plan de ahorro por pagar</td><td>${cta(vig.cuenta_ahorro_pagar_id)}</td></tr>
+          <tr><td>Aporte al plan de ahorro (gasto)</td><td>${cta(vig.cuenta_aporte_ahorro_id)}</td></tr></tbody></table>` : '<p>No hay parámetros.</p>'}
         ${pars.length > 1 ? `<p class="muted" style="font-size:12.5px;margin:8px 0 0">Vigencias anteriores: ${pars.filter(p => p !== vig).map(p => fecha(p.vigente_desde)).join(', ')}</p>` : ''}</div>
       <div class="tarjeta"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Tabla anual del IR</h2><button class="btn sec chico" id="b-ir">Editar</button></div>
         <table><thead><tr><th class="num">Desde (C$)</th><th class="num">Hasta (C$)</th><th class="num">Base</th><th class="num">%</th></tr></thead>
@@ -3322,12 +3408,17 @@ async function vConfigPlanilla(m) {
       <label class="campo ancho">INSS por pagar${ctaSel('cuenta_inss_pagar_id', vig?.cuenta_inss_pagar_id, ['pasivo'])}</label>
       <label class="campo ancho">IR por pagar${ctaSel('cuenta_ir_pagar_id', vig?.cuenta_ir_pagar_id, ['pasivo'])}</label>
       <label class="campo ancho">INATEC por pagar${ctaSel('cuenta_inatec_pagar_id', vig?.cuenta_inatec_pagar_id, ['pasivo'])}</label>
-      <label class="campo ancho">Salarios por pagar${ctaSel('cuenta_neto_pagar_id', vig?.cuenta_neto_pagar_id, ['pasivo'])}</label></div>`,
+      <label class="campo ancho">Salarios por pagar${ctaSel('cuenta_neto_pagar_id', vig?.cuenta_neto_pagar_id, ['pasivo'])}</label>
+      <label class="campo ancho">Prestaciones (gasto)${ctaSel('cuenta_prestaciones_id', vig?.cuenta_prestaciones_id, ['gasto', 'costo'])}</label>
+      <label class="campo">Aporte de AFC al ahorro %<input name="ahorro_afc_pct" inputmode="decimal" value="${vig?.ahorro_afc_pct ?? 5}"></label>
+      <label class="campo">Retiro del ahorro cada (años)<input name="ahorro_anios_retiro" type="number" min="1" value="${vig?.ahorro_anios_retiro ?? 5}"></label>
+      <label class="campo ancho">Plan de ahorro por pagar${ctaSel('cuenta_ahorro_pagar_id', vig?.cuenta_ahorro_pagar_id, ['pasivo'])}</label>
+      <label class="campo ancho">Aporte al plan de ahorro (gasto)${ctaSel('cuenta_aporte_ahorro_id', vig?.cuenta_aporte_ahorro_id, ['gasto', 'costo'])}</label></div>`,
     async d => {
       const f = Object.fromEntries(new FormData($('form', d)));
-      const v = { ...f }; ['inss_laboral', 'inss_patronal', 'inatec', 'dias_vacaciones_mes'].forEach(k => v[k] = num(f[k]));
+      const v = { ...f }; ['inss_laboral', 'inss_patronal', 'inatec', 'dias_vacaciones_mes', 'ahorro_afc_pct'].forEach(k => v[k] = num(f[k])); v.ahorro_anios_retiro = Number(f.ahorro_anios_retiro) || 5;
       v.techo_inss = f.techo_inss ? num(f.techo_inss) : null;
-      ['cuenta_salarios_id', 'cuenta_patronal_id', 'cuenta_inss_pagar_id', 'cuenta_ir_pagar_id', 'cuenta_inatec_pagar_id', 'cuenta_neto_pagar_id'].forEach(k => v[k] = Number(f[k]));
+      ['cuenta_salarios_id', 'cuenta_patronal_id', 'cuenta_inss_pagar_id', 'cuenta_ir_pagar_id', 'cuenta_inatec_pagar_id', 'cuenta_neto_pagar_id', 'cuenta_prestaciones_id', 'cuenta_ahorro_pagar_id', 'cuenta_aporte_ahorro_id'].forEach(k => v[k] = Number(f[k]));
       const existe = pars.find(p => p.vigente_desde === v.vigente_desde);
       if (existe) await q(sb.from('planilla_parametros').update(v).eq('id', existe.id)); else await q(sb.from('planilla_parametros').insert(v));
       avisar('Tasas guardadas'); vConfigPlanilla(m);
