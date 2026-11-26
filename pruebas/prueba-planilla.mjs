@@ -14,7 +14,7 @@ await db.exec(`
   grant execute on function auth.uid() to authenticated, anon;
   grant usage on schema public to authenticated, anon;
 `);
-for (const f of ['schema.sql', '002-roles-inventario.sql', '003-bancos-cheques.sql', '004-planilla-marcaje.sql']) await db.exec(fs.readFileSync('./' + f, 'utf8'));
+for (const f of ['schema.sql', '002-roles-inventario.sql', '003-bancos-cheques.sql', '004-planilla-marcaje.sql', '005-pago-marcaje.sql', '006-pago-planilla.sql']) await db.exec(fs.readFileSync('./' + f, 'utf8'));
 
 const ADM = '11111111-1111-1111-1111-111111111111', RH = '22222222-2222-2222-2222-222222222222',
       DIR = '33333333-3333-3333-3333-333333333333', BOD = '44444444-4444-4444-4444-444444444444', CON = '55555555-5555-5555-5555-555555555555';
@@ -182,6 +182,50 @@ check('saldo de salarios por pagar vuelve a cero', casi(await saldoCta(par.cuent
 check('vacaciones acumuladas anuladas', (await v1(`select count(*)::int n from vacaciones_movimientos where planilla_id=$1 and estado='aprobado'`, [pq]))[0].n === 0);
 const pq2 = (await como(RH, `select guardar_planilla($1::jsonb) id`, [JSON.stringify({ tipo: 'quincenal', desde: '2026-11-01', hasta: '2026-11-15' })])).rows[0].id;
 check('anulada, se puede rehacer la quincena', pq2 > pq);
+
+console.log('Mi pago (app de marcaje)');
+await como(RH, `select enviar_planilla($1)`, [pq2]);
+await como(DIR, `select aprobar_planilla($1)`, [pq2]);
+const clave2 = (await como(RH, `select crear_clave_integracion('Marcaje 2') c`)).rows[0].c;
+await falla('sin clave no hay pago', 'anon', `select pago_colaborador($1, $2, 2026, 11)`, ['afc_x', 'ana@afc.org'], /no válida/);
+const pago = (await como('anon', `select pago_colaborador($1, $2, 2026, 11) r`, [clave2, 'ANA@afc.org'])).rows[0].r;
+const lA = await lin(pq2, A);
+check('devuelve salario mensual y neto del mes', pago.encontrado && pago.salario_mensual === 30000 && casi(pago.total_neto, lA.neto) && pago.planillas.length === 1, JSON.stringify(pago).slice(0, 300));
+check('incluye deducciones y novedades', casi(pago.total_inss, lA.inss_laboral) && casi(pago.total_ir, lA.ir) && Array.isArray(pago.planillas[0].novedades));
+check('la planilla anulada no cuenta', pago.planillas.every(x => x.desde === '2026-11-01'));
+check('mes sin planillas = cero', (await como('anon', `select pago_colaborador($1, $2, 2026, 10) r`, [clave2, 'ana@afc.org'])).rows[0].r.total_neto === 0);
+check('correo desconocido no revela nada', (await como('anon', `select pago_colaborador($1, $2, 2026, 11) r`, [clave2, 'otro@afc.org'])).rows[0].r.encontrado === false);
+
+console.log('Pago de planilla y colillas');
+const cbNio = (await v1(`select id, cuenta_contable_id from cuentas_bancarias where moneda='NIO' order by id limit 1`))[0];
+const cbUsd = (await v1(`select id from cuentas_bancarias where moneda='USD' order by id limit 1`))[0];
+await falla('RR. HH. no confirma pagos', RH, `select pagar_planilla($1, $2, '2026-11-15', 'REF-1')`, [pq2, cbNio.id], /Administración/);
+await falla('no se paga desde la cuenta en dólares', DIR, `select pagar_planilla($1, $2, '2026-11-15', 'REF-1')`, [pq2, cbUsd.id], /córdobas/);
+const tok = (await como(DIR, `select pagar_planilla($1, $2, '2026-11-15', 'BANPRO-778899') t`, [pq2, cbNio.id])).rows[0].t;
+check('confirma el pago y entrega token de correo', /^[0-9a-f]{64}$/.test(tok));
+const pl2 = (await v1(`select * from planillas where id=$1`, [pq2]))[0];
+const asp = (await v1(`select a.estado, a.tipo, a.referencia, sum(l.debe) d, sum(l.haber) h from asientos a join asiento_lineas l on l.asiento_id=a.id where a.id=$1 group by 1,2,3`, [pl2.asiento_pago_id]))[0];
+check('asiento de pago contabilizado y cuadrado', asp.estado === 'contabilizado' && asp.tipo === 'egreso' && asp.referencia === 'BANPRO-778899' && casi(asp.d, pl2.total_neto) && casi(asp.h, pl2.total_neto));
+check('salarios por pagar queda en cero', casi(await saldoCta(par.cuenta_neto_pagar_id), 0));
+check('el banco baja por el neto pagado', casi(await saldoCta(cbNio.cuenta_contable_id), pl2.total_neto));
+await falla('no se paga dos veces', DIR, `select pagar_planilla($1, $2, '2026-11-15', 'X')`, [pq2, cbNio.id], /ya está pagada/);
+await falla('no se anula una planilla pagada', DIR, `select anular_planilla($1, 'x', '2026-11-20')`, [pq2], /anule primero el pago/);
+check('nadie lee los tokens desde la app', await como(DIR, `select count(*) from planilla_tokens`).then(() => false, () => true));
+check('el token no viaja en la planilla', !('token_correo' in pl2));
+await falla('token falso rechazado', 'anon', `select colillas_planilla($1, $2, $3)`, [clave2, pq2, 'x'.repeat(64)], /no está autorizado/);
+await falla('sin clave no hay colillas', 'anon', `select colillas_planilla($1, $2, $3)`, ['afc_x', pq2, tok], /no válida/);
+const col = (await como('anon', `select colillas_planilla($1, $2, $3) r`, [clave2, pq2, tok])).rows[0].r;
+const ana = col.empleados.find(x => x.correo === 'ana@afc.org');
+check('colillas con correo, neto y deducciones', col.empleados.length === 3 && ana && casi(ana.neto, (await lin(pq2, A)).neto) && ana.cuenta.startsWith('••••'), JSON.stringify(ana).slice(0, 200));
+await falla('el token sirve una sola vez', 'anon', `select colillas_planilla($1, $2, $3)`, [clave2, pq2, tok], /ya se hizo/);
+await como('anon', `select registrar_envio_colillas($1, $2, 3, 0, '[]'::jsonb)`, [clave2, pq2]);
+check('queda registrado el envío', (await v1(`select correos_enviados n from planillas where id=$1`, [pq2]))[0].n === 3);
+const tok2 = (await como(DIR, `select reenviar_colillas($1) t`, [pq2])).rows[0].t;
+check('se puede reenviar con un token nuevo', (await como('anon', `select colillas_planilla($1, $2, $3) r`, [clave2, pq2, tok2])).rows[0].r.empleados.length === 3);
+const pagoAna = (await como('anon', `select pago_colaborador($1, $2, 2026, 11) r`, [clave2, 'ana@afc.org'])).rows[0].r;
+check('Mi pago muestra la planilla como depositada', pagoAna.planillas[0].depositada === true && pagoAna.planillas[0].fecha_pago === '2026-11-15');
+await como(DIR, `select anular_pago_planilla($1, 'Referencia equivocada')`, [pq2]);
+check('anular el pago revierte el banco', casi(await saldoCta(cbNio.cuenta_contable_id), 0) && (await v1(`select pagada_en from planillas where id=$1`, [pq2]))[0].pagada_en === null);
 
 console.log(`\n${ok} pruebas correctas, ${fail} fallidas`);
 process.exit(fail ? 1 : 0);
