@@ -17,6 +17,8 @@ App web de contabilidad, cheques, inventario y planilla para Amigos for Christ s
 | `006-pago-planilla.sql` | Migración 6: pago de planilla (asiento Salarios por pagar contra banco) y colillas por correo. |
 | `007-aguinaldo-liquidacion-activos.sql` | Migración 7: aguinaldo, liquidaciones (prestaciones e indemnización art. 45) y activos fijos con depreciación mensual. |
 | `008-plan-ahorro.sql` | Migración 8: plan de ahorro (porcentaje del colaborador, aporte de AFC, retiro cada 5 años y devolución en la liquidación). |
+| `009-rendimiento.sql` | Migración 9: reglas de acceso evaluadas una vez por consulta e índices (rendimiento con muchos datos). |
+| `010-rendimiento-bodegas.sql` | Migración 10: permisos por bodega rápidos en inventario. |
 | `integracion/PuenteContabilidad.gs` | Archivo para el Apps Script de la app de marcaje: envía cada noche colaboradores, marcas y permisos. |
 | `index.html` | La app web completa (no necesita compilar nada). |
 | `logo.png`, `logo-blanco.png` | Logos oficiales de Amigos for Christ. |
@@ -147,3 +149,11 @@ Ejecútelas desde la carpeta donde están los `.sql`.
 - **Al salir:** la liquidación devuelve todo el saldo (lo suyo y lo de AFC), sin INSS ni IR.
 - Saldos que ya traían de AG Planilla: botón *Saldo inicial*.
 - Pruebas: `pruebas/prueba-008.mjs`.
+
+### Prueba con muchos datos (carpeta `simulacion/`)
+
+Scripts para llenar la base con tres años de datos ficticios (200 colaboradores, 130,000 marcas, 17,000 asientos, 1,700 cheques, 4,300 movimientos de inventario, 250 activos) y luego borrarlos sin tocar lo real. Se ejecutan en el SQL Editor de Supabase en orden: `sim-1-preparar.sql`, `sim-2-funciones.sql`, `sim-3-cargar-2024.sql`, `-2025`, `-2026`. Para borrar todo lo simulado: `sim-9-borrar.sql`.
+
+- Todo lo ficticio queda anotado en la tabla `_simulacion`; los correos son `@simulacion.invalid` (no se envía nada) y los cheques usan una cuenta bancaria ficticia.
+- Mientras la simulación esté cargada, no registre asientos reales: tomarían números después de los simulados.
+- Resultado de la prueba (noviembre 2026): la base pasó de 14 MB a 183 MB y todas las pantallas cargan en 2 segundos o menos. Las listas leen todas las filas en páginas de 1,000 (antes se cortaban en 1,000 sin avisar) y dibujan las primeras 500 con un botón para ver el resto.
