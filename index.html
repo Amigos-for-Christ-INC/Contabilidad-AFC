@@ -308,7 +308,8 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = v => { if (v === null || v === undefined || v === '') return 0; const n = Number(String(v).replace(/,/g, '')); return isFinite(n) ? n : NaN; };
 const r2 = n => Math.round((n + Number.EPSILON) * 100) / 100;
-const fmt = n => (n === null || n === undefined || n === '') ? '' : Number(n).toLocaleString('es-NI', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const FMT2 = new Intl.NumberFormat('es-NI', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), FMT4 = new Intl.NumberFormat('es-NI', { maximumFractionDigits: 4 });
+const fmt = n => (n === null || n === undefined || n === '') ? '' : FMT2.format(Number(n));
 const fmtZ = n => Number(n) === 0 ? '–' : fmt(n);
 const fecha = d => d ? String(d).slice(0, 10).split('-').reverse().join('/') : '';
 const fechaHora = d => d ? new Date(d).toLocaleString('es-NI', { dateStyle: 'short', timeStyle: 'short' }) : '';
@@ -343,7 +344,7 @@ const PERMISOS = [
 const TIPOS_MOV = { entrada: 'Entrada', salida: 'Salida', traslado: 'Traslado', ajuste: 'Ajuste' };
 const PREFIJO_MOV = { entrada: 'E', salida: 'S', traslado: 'T', ajuste: 'A' };
 const docMov = m => m.numero ? `${PREFIJO_MOV[m.tipo]}-${m.anio}-${String(m.numero).padStart(4, '0')}` : 'Borrador';
-const fmtQ = n => (n === null || n === undefined || n === '') ? '' : Number(n).toLocaleString('es-NI', { maximumFractionDigits: 4 });
+const fmtQ = n => (n === null || n === undefined || n === '') ? '' : FMT4.format(Number(n));
 const ordenCodigo = (a, b) => { const x = a.codigo.split('.').map(Number), y = b.codigo.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] ?? -1) - (y[i] ?? -1); if (d) return d; } return 0; };
 
 function avisar(msg, tipo = 'ok') {
@@ -406,6 +407,15 @@ async function todas(b, max = MAX_FILAS) {
   if (out.length >= max) out.truncado = true;
   return out;
 }
+// Listas largas: dibuja las primeras 500 filas y el resto al pulsar "Mostrar"
+const MAS = {}; let masN = 0;
+function filasLargas(filas, fila, columnas = 12, lim = 500) {
+  if (filas.length <= lim) return filas.map(fila).join('');
+  const id = ++masN; MAS[id] = () => filas.slice(lim).map(fila).join('');
+  return filas.slice(0, lim).map(fila).join('') + `<tr class="no-imprimir"><td colspan="${columnas}" style="text-align:center;padding:14px">
+    <button type="button" class="btn sec" data-mas="${id}">Mostrar las ${(filas.length - lim).toLocaleString('en-US')} filas restantes</button></td></tr>`;
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-mas]'); if (!b) return; const tr = b.closest('tr'); tr.insertAdjacentHTML('afterend', MAS[b.dataset.mas]()); delete MAS[b.dataset.mas]; tr.remove(); });
 const avisoTruncado = filas => filas.truncado ? `<div class="aviso" style="margin:0 0 10px">Se muestran las primeras ${filas.length.toLocaleString('en-US')} filas. Acote las fechas o use los filtros para ver el resto.</div>` : '';
 function csv(nombre, filas) {
   const t = filas.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\r\n');
@@ -838,10 +848,10 @@ async function vAsientos(m) {
   const total = a => a.asiento_lineas.reduce((s, l) => s + Number(l.debe), 0);
   $('#lista').innerHTML = avisoTruncado(filas) + (filas.length ? `<table>
     <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Referencia</th><th class="num">Total C$</th><th>Estado</th></tr></thead>
-    <tbody>${filas.map(a => `<tr class="clic" onclick="location.hash='asiento/${a.id}'">
+    <tbody>${filasLargas(filas, a => `<tr class="clic" onclick="location.hash='asiento/${a.id}'">
       <td>${a.numero ?? '<span class="muted">—</span>'}</td><td>${fecha(a.fecha)}</td><td>${TIPOS_ASIENTO[a.tipo]}</td>
       <td>${esc(a.concepto)}${a.moneda === 'USD' ? ' <span class="muted">(US$)</span>' : ''}${a.origen !== 'manual' ? ` <span class="muted">(${a.origen})</span>` : ''}</td><td>${esc(a.referencia)}</td>
-      <td class="num">${fmt(total(a))}</td><td><span class="etiqueta e-${a.estado}">${a.estado}</span></td></tr>`).join('')}</tbody></table>`
+      <td class="num">${fmt(total(a))}</td><td><span class="etiqueta e-${a.estado}">${a.estado}</span></td></tr>`, 7)}</tbody></table>`
     : '<div class="vacio">No hay asientos con estos filtros.</div>');
   $('#b-csv').onclick = () => csv(`asientos_${f.desde}_${f.hasta}.csv`,
     [['Numero','Fecha','Tipo','Concepto','Referencia','Moneda','Total C$','Estado'],
@@ -1236,9 +1246,9 @@ async function vMayor(m, arg) {
       const td = filas.reduce((s, f) => s + Number(f.debe || 0), 0), th = filas.reduce((s, f) => s + Number(f.haber || 0), 0);
       $('#res').innerHTML = `<div class="reporte-titulo"><h2>${esc(etiquetaCuenta(c))}</h2><div class="muted">Del ${fecha(p.desde)} al ${fecha(p.hasta)} · Saldo ${c.naturaleza} · C$</div></div>
         <div class="envoltura"><table><thead><tr><th>Fecha</th><th>Nº</th><th>Concepto</th>${varias ? '<th>Cuenta</th>' : ''}<th>Descripción</th><th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th></tr></thead>
-        <tbody>${filas.map(f => `<tr class="${f.asiento_id ? 'clic' : 'grupo'}" ${f.asiento_id ? `onclick="location.hash='asiento/${f.asiento_id}'"` : ''}>
+        <tbody>${filasLargas(filas, f => `<tr class="${f.asiento_id ? 'clic' : 'grupo'}" ${f.asiento_id ? `onclick="location.hash='asiento/${f.asiento_id}'"` : ''}>
           <td>${fecha(f.fecha)}</td><td>${f.numero ?? ''}</td><td>${esc(f.concepto)}</td>${varias ? `<td>${esc(f.cuenta)}</td>` : ''}<td>${esc(f.descripcion)}</td>
-          <td class="num">${f.asiento_id ? fmtZ(f.debe) : ''}</td><td class="num">${f.asiento_id ? fmtZ(f.haber) : ''}</td><td class="num">${fmt(f.saldo)}</td></tr>`).join('')}
+          <td class="num">${f.asiento_id ? fmtZ(f.debe) : ''}</td><td class="num">${f.asiento_id ? fmtZ(f.haber) : ''}</td><td class="num">${fmt(f.saldo)}</td></tr>`, 8, 1000)}
           <tr class="total"><td colspan="${varias ? 5 : 4}">Totales del período</td><td class="num">${fmt(td)}</td><td class="num">${fmt(th)}</td><td class="num">${fmt(filas.at(-1)?.saldo)}</td></tr>
         </tbody></table></div>`;
       $('#b-csv').disabled = false;
@@ -1602,10 +1612,10 @@ async function vMovimientos(m) {
   const est = { borrador: 'e-borrador', aplicado: 'e-contabilizado', anulado: 'e-anulado' };
   $('#lista').innerHTML = filas.length ? `<table>
     <thead><tr><th>Documento</th><th>Fecha</th><th>Tipo</th><th>Bodega</th><th>Concepto</th><th class="num">Valor C$</th><th>Estado</th></tr></thead>
-    <tbody>${filas.map(x => `<tr class="clic" onclick="location.hash='movimiento/${x.id}'"><td>${docMov(x)}</td><td>${fecha(x.fecha)}</td><td>${TIPOS_MOV[x.tipo]}</td>
+    <tbody>${filasLargas(filas, x => `<tr class="clic" onclick="location.hash='movimiento/${x.id}'"><td>${docMov(x)}</td><td>${fecha(x.fecha)}</td><td>${TIPOS_MOV[x.tipo]}</td>
       <td>${esc(bodegaPorId(x.bodega_id)?.codigo)}${x.bodega_destino_id ? ' → ' + esc(bodegaPorId(x.bodega_destino_id)?.codigo) : ''}</td>
       <td>${esc(x.concepto)}${x.referencia ? ` <span class="muted">· ${esc(x.referencia)}</span>` : ''}</td>
-      <td class="num">${x.estado === 'borrador' && x.tipo !== 'entrada' ? '<span class="muted">al aplicar</span>' : fmt(total(x))}</td><td><span class="etiqueta ${est[x.estado]}">${x.estado}</span></td></tr>`).join('')}</tbody></table>`
+      <td class="num">${x.estado === 'borrador' && x.tipo !== 'entrada' ? '<span class="muted">al aplicar</span>' : fmt(total(x))}</td><td><span class="etiqueta ${est[x.estado]}">${x.estado}</span></td></tr>`, 7)}</tbody></table>`
     : '<div class="vacio">No hay movimientos con estos filtros.</div>';
   $('#b-csv').onclick = () => csv(`movimientos_${f.desde}_${f.hasta}.csv`, [['Documento', 'Fecha', 'Tipo', 'Bodega', 'Destino', 'Concepto', 'Referencia', 'Valor C$', 'Estado'],
     ...filas.map(x => [docMov(x), x.fecha, TIPOS_MOV[x.tipo], bodegaPorId(x.bodega_id)?.nombre, bodegaPorId(x.bodega_destino_id)?.nombre || '', x.concepto, x.referencia || '', total(x).toFixed(2), x.estado])]);
@@ -2229,10 +2239,10 @@ async function vCheques(m) {
       </form>
       <div class="envoltura">${filas.length ? `<table>
         <thead><tr><th>Nº</th><th>Fecha</th><th>Cuenta</th><th>Beneficiario</th><th>Concepto</th><th class="num">Monto</th><th>Estado</th><th>Elaboró</th></tr></thead>
-        <tbody>${filas.map(c => `<tr class="clic" onclick="location.hash='cheque/${c.id}'"><td><b>${c.numero ?? '—'}</b></td><td>${fecha(c.fecha)}</td><td>${esc(bancoPorId(c.cuenta_bancaria_id)?.nombre || '')}</td>
+        <tbody>${filasLargas(filas, c => `<tr class="clic" onclick="location.hash='cheque/${c.id}'"><td><b>${c.numero ?? '—'}</b></td><td>${fecha(c.fecha)}</td><td>${esc(bancoPorId(c.cuenta_bancaria_id)?.nombre || '')}</td>
           <td>${esc(c.beneficiario)}</td><td class="muted">${esc(c.concepto)}</td><td class="num"><b>${simbolo(c.moneda)} ${fmt(c.monto)}</b></td>
           <td><span class="etiqueta e-${c.estado}">${ESTADOS_CHEQUE[c.estado]}</span>${c.cobrado ? ' <span class="etiqueta e-anulado">Cobrado</span>' : ''}${c.estado === 'borrador' && c.motivo_rechazo ? ' <span class="etiqueta e-anulado" title="' + esc(c.motivo_rechazo) + '">Devuelto</span>' : ''}</td>
-          <td class="muted">${esc(nombrePerfil(c.creado_por))}</td></tr>`).join('')}</tbody></table>`
+          <td class="muted">${esc(nombrePerfil(c.creado_por))}</td></tr>`, 8)}</tbody></table>`
         : `<div class="vacio"><span class="ilus">✓</span>${f.tab === 'por_aprobar' ? 'No hay cheques esperando aprobación.' : 'No hay cheques en esta vista.'}</div>`}</div>
     </div>`;
   $$('[data-tab]').forEach(a => a.onclick = e => { e.preventDefault(); filtroCheques.tab = a.dataset.tab; vCheques(m); });
