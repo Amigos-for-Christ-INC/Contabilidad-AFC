@@ -395,14 +395,15 @@ async function q(p) { const { data, error } = await p; if (error) throw error; r
 // Lee todas las filas en páginas de 1,000 (Supabase entrega como máximo 1,000 por consulta)
 const MAX_FILAS = 20000;
 async function todas(b, max = MAX_FILAS) {
-  const out = [];
-  for (let i = 0; i < max; i += 1000) {
-    const { data, error } = await b.range(i, Math.min(i + 999, max - 1));
-    if (error) throw error;
-    out.push(...data);
-    if (data.length < 1000) return out;
+  // la consulta se lanza en el mismo instante en que se fija el rango (el constructor de Supabase se reutiliza)
+  const pagina = i => new Promise((ok, mal) => b.range(i, Math.min(i + 999, max - 1)).then(r => r.error ? mal(r.error) : ok(r.data), mal));
+  const out = await pagina(0);
+  // si hay más, pide las siguientes páginas de 4 en 4 al mismo tiempo
+  for (let i = 1000; out.length === i && i < max; i += 4000) {
+    const lotes = await Promise.all([0, 1, 2, 3].map(k => i + k * 1000).filter(x => x < max).map(pagina));
+    for (const l of lotes) { out.push(...l); if (l.length < 1000) return out; }
   }
-  out.truncado = true;
+  if (out.length >= max) out.truncado = true;
   return out;
 }
 const avisoTruncado = filas => filas.truncado ? `<div class="aviso" style="margin:0 0 10px">Se muestran las primeras ${filas.length.toLocaleString('en-US')} filas. Acote las fechas o use los filtros para ver el resto.</div>` : '';
