@@ -392,6 +392,20 @@ function mensajeError(e) {
 }
 function fallo(e) { console.error(e); avisar(mensajeError(e), 'error'); }
 async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
+// Lee todas las filas en páginas de 1,000 (Supabase entrega como máximo 1,000 por consulta)
+const MAX_FILAS = 20000;
+async function todas(b, max = MAX_FILAS) {
+  const out = [];
+  for (let i = 0; i < max; i += 1000) {
+    const { data, error } = await b.range(i, Math.min(i + 999, max - 1));
+    if (error) throw error;
+    out.push(...data);
+    if (data.length < 1000) return out;
+  }
+  out.truncado = true;
+  return out;
+}
+const avisoTruncado = filas => filas.truncado ? `<div class="aviso" style="margin:0 0 10px">Se muestran las primeras ${filas.length.toLocaleString('en-US')} filas. Acote las fechas o use los filtros para ver el resto.</div>` : '';
 function csv(nombre, filas) {
   const t = filas.map(r => r.map(v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\r\n');
   const a = document.createElement('a');
@@ -426,7 +440,7 @@ async function cargarCatalogos() {
   const inv = puede('inventario.ver') || puede('contabilidad.ver');
   const nada = Promise.resolve([]);
   const [cu, ce, pe, ro, bo, un, ca, pr, prod, pb, cbs] = await Promise.all([
-    q(sb.from('cuentas').select('*')),
+    todas(sb.from('cuentas').select('*')),
     q(sb.from('centros_costo').select('*').order('codigo')),
     q(sb.from('perfiles').select('*').order('nombre')),
     q(sb.from('roles').select('*').order('nombre')),
@@ -434,7 +448,7 @@ async function cargarCatalogos() {
     inv ? q(sb.from('unidades').select('*').order('codigo')) : nada,
     inv ? q(sb.from('categorias_producto').select('*').order('nombre')) : nada,
     inv ? q(sb.from('producto_presentaciones').select('*')) : nada,
-    inv ? q(sb.from('productos').select('*').order('codigo')) : nada,
+    inv ? todas(sb.from('productos').select('*').order('codigo')) : nada,
     q(sb.from('perfil_bodegas').select('*').eq('perfil_id', yo.id)),
     puede('bancos.ver') || puede('planilla.aprobar') ? q(sb.from('cuentas_bancarias').select('*').order('id')) : nada
   ]);
@@ -704,7 +718,7 @@ async function vInicio(m) {
     B ? q(sb.rpc('saldos_bancos')) : nada,
     B ? q(sb.from('cheques').select('*').eq('estado', 'por_aprobar').order('enviado_en')) : nada,
     B && puede('bancos.emitir') ? q(sb.from('cheques').select('id,beneficiario,monto,moneda,motivo_rechazo').eq('estado', 'borrador').eq('creado_por', yo.id)) : nada,
-    I ? q(sb.from('existencias').select('*')) : nada
+    I ? todas(sb.from('existencias').select('*')) : nada
   ]);
   const mesAct = res?.at(-1) || { ingresos: 0, gastos: 0 };
   const totBancos = (saldos || []).reduce((s, x) => s + Number(x.saldo_libros), 0);
@@ -815,19 +829,19 @@ async function vAsientos(m) {
   $('#f-filtro').onsubmit = e => { e.preventDefault(); Object.assign(filtroAsientos, Object.fromEntries(new FormData(e.target))); vAsientos(m); };
   let consulta = sb.from('asientos').select('id,numero,fecha,tipo,concepto,referencia,moneda,estado,origen,asiento_lineas(debe,debe_me)')
     .gte('fecha', f.desde).lte('fecha', f.hasta)
-    .order('fecha', { ascending: false }).order('numero', { ascending: false, nullsFirst: true }).limit(1000);
+    .order('fecha', { ascending: false }).order('numero', { ascending: false, nullsFirst: true });
   if (f.estado) consulta = consulta.eq('estado', f.estado);
   const t = String(f.texto || '').replace(/[,()%*"\\]/g, ' ').trim();
   if (t) consulta = consulta.or(`concepto.ilike."*${t}*",referencia.ilike."*${t}*"`);
-  const filas = await q(consulta);
+  const filas = await todas(consulta);
   const total = a => a.asiento_lineas.reduce((s, l) => s + Number(l.debe), 0);
-  $('#lista').innerHTML = filas.length ? `<table>
+  $('#lista').innerHTML = avisoTruncado(filas) + (filas.length ? `<table>
     <thead><tr><th>Nº</th><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Referencia</th><th class="num">Total C$</th><th>Estado</th></tr></thead>
     <tbody>${filas.map(a => `<tr class="clic" onclick="location.hash='asiento/${a.id}'">
       <td>${a.numero ?? '<span class="muted">—</span>'}</td><td>${fecha(a.fecha)}</td><td>${TIPOS_ASIENTO[a.tipo]}</td>
       <td>${esc(a.concepto)}${a.moneda === 'USD' ? ' <span class="muted">(US$)</span>' : ''}${a.origen !== 'manual' ? ` <span class="muted">(${a.origen})</span>` : ''}</td><td>${esc(a.referencia)}</td>
       <td class="num">${fmt(total(a))}</td><td><span class="etiqueta e-${a.estado}">${a.estado}</span></td></tr>`).join('')}</tbody></table>`
-    : '<div class="vacio">No hay asientos con estos filtros.</div>';
+    : '<div class="vacio">No hay asientos con estos filtros.</div>');
   $('#b-csv').onclick = () => csv(`asientos_${f.desde}_${f.hasta}.csv`,
     [['Numero','Fecha','Tipo','Concepto','Referencia','Moneda','Total C$','Estado'],
      ...filas.map(a => [a.numero ?? '', a.fecha, TIPOS_ASIENTO[a.tipo], a.concepto, a.referencia ?? '', a.moneda, total(a).toFixed(2), a.estado])]);
@@ -1216,7 +1230,7 @@ async function vMayor(m, arg) {
     const c = cuentaPorId(p.cuenta); if (!c) return;
     $('#res').innerHTML = '<div class="cargando">Cargando…</div>';
     try {
-      const filas = await q(sb.rpc('libro_mayor', { p_cuenta: c.id, p_desde: p.desde, p_hasta: p.hasta, p_centro: p.centro ? Number(p.centro) : null }));
+      const filas = await todas(sb.rpc('libro_mayor', { p_cuenta: c.id, p_desde: p.desde, p_hasta: p.hasta, p_centro: p.centro ? Number(p.centro) : null }), 200000);
       const varias = !c.acepta_movimientos;
       const td = filas.reduce((s, f) => s + Number(f.debe || 0), 0), th = filas.reduce((s, f) => s + Number(f.haber || 0), 0);
       $('#res').innerHTML = `<div class="reporte-titulo"><h2>${esc(etiquetaCuenta(c))}</h2><div class="muted">Del ${fecha(p.desde)} al ${fecha(p.hasta)} · Saldo ${c.naturaleza} · C$</div></div>
@@ -1487,7 +1501,7 @@ const datalistProductos = (id, soloActivos = true) => `<datalist id="${id}">` + 
 
 async function resumenInventario() {
   const [ex, borr] = await Promise.all([
-    q(sb.from('existencias').select('*')),
+    todas(sb.from('existencias').select('*')),
     puede('inventario.editar') ? q(sb.from('inv_movimientos').select('id,tipo,fecha,concepto,bodega_id').eq('estado', 'borrador').order('fecha', { ascending: false }).limit(6)) : Promise.resolve([])
   ]);
   const tot = {}; ex.forEach(e => tot[e.producto_id] = (tot[e.producto_id] || 0) + Number(e.cantidad));
@@ -1514,7 +1528,7 @@ async function resumenInventario() {
 let filtroExist = { texto: '', categoria: '', bajos: false, ceros: true };
 async function vExistencias(m) {
   await cargarCatalogos();
-  const ex = await q(sb.from('existencias').select('*'));
+  const ex = await todas(sb.from('existencias').select('*'));
   const bods = bodegasAccesibles(false).filter(b => b.activa || ex.some(e => e.bodega_id === b.id && Number(e.cantidad)));
   const cant = {}; ex.forEach(e => cant[e.producto_id + ':' + e.bodega_id] = Number(e.cantidad));
   const f = filtroExist;
@@ -1578,10 +1592,10 @@ async function vMovimientos(m) {
     </div>`;
   $('#f-mov').onsubmit = e => { e.preventDefault(); Object.assign(filtroMov, Object.fromEntries(new FormData(e.target))); vMovimientos(m); };
   let c = sb.from('inv_movimientos').select('*,inv_movimiento_lineas(costo_total)').gte('fecha', f.desde).lte('fecha', f.hasta)
-    .order('fecha', { ascending: false }).order('id', { ascending: false }).limit(1000);
+    .order('fecha', { ascending: false }).order('id', { ascending: false });
   if (f.tipo) c = c.eq('tipo', f.tipo);
   if (f.estado) c = c.eq('estado', f.estado);
-  let filas = await q(c);
+  let filas = await todas(c);
   if (f.bodega) filas = filas.filter(x => x.bodega_id === Number(f.bodega) || x.bodega_destino_id === Number(f.bodega));
   const total = x => x.inv_movimiento_lineas.reduce((s, l) => s + Math.abs(Number(l.costo_total || 0)), 0);
   const est = { borrador: 'e-borrador', aplicado: 'e-contabilizado', anulado: 'e-anulado' };
@@ -1691,7 +1705,7 @@ function formMovimiento(m, M) {
   let exist = {};
   const cargarExist = async () => {
     const b = Number($('#m-bod').value);
-    const rows = await q(sb.from('existencias').select('*').eq('bodega_id', b)).catch(() => []);
+    const rows = await todas(sb.from('existencias').select('*').eq('bodega_id', b)).catch(() => []);
     exist = {}; rows.forEach(r => exist[r.producto_id] = Number(r.cantidad));
     pintar();
   };
@@ -1825,7 +1839,7 @@ async function vKardex(m, arg) {
     const pr = productoPorId(p.producto); if (!pr) return;
     $('#res').innerHTML = '<div class="cargando">Cargando…</div>';
     try {
-      const filas = await q(sb.rpc('kardex', { p_producto: pr.id, p_bodega: p.bodega ? Number(p.bodega) : null, p_desde: p.desde, p_hasta: p.hasta }));
+      const filas = await todas(sb.rpc('kardex', { p_producto: pr.id, p_bodega: p.bodega ? Number(p.bodega) : null, p_desde: p.desde, p_hasta: p.hasta }));
       const u = esc(codUnidad(pr.unidad_id));
       const te = filas.reduce((s, f) => s + Number(f.entrada || 0), 0), ts = filas.reduce((s, f) => s + Number(f.salida || 0), 0);
       $('#res').innerHTML = `<div class="reporte-titulo"><img src="logo.png" alt="Amigos for Christ"><h2>Kardex · ${esc(etiquetaProducto(pr))}</h2>
@@ -2185,7 +2199,7 @@ async function vCheques(m) {
   await cargarCatalogos();
   if (!filtroCheques) { const [d, h] = rangoMes(); filtroCheques = { tab: puede('bancos.aprobar') ? 'por_aprobar' : 'todos', desde: d.slice(0, 8) + '01', hasta: h, cuenta: '', texto: '' }; }
   const f = filtroCheques;
-  const todos = await q(sb.from('cheques').select('*').gte('fecha', f.desde).lte('fecha', f.hasta).order('fecha', { ascending: false }).order('id', { ascending: false }).limit(1000));
+  const todos = await todas(sb.from('cheques').select('*').gte('fecha', f.desde).lte('fecha', f.hasta).order('fecha', { ascending: false }).order('id', { ascending: false }));
   const pend = await q(sb.from('cheques').select('*').in('estado', ['por_aprobar', 'borrador']).order('id', { ascending: false }));
   const base = [...pend, ...todos.filter(c => !pend.some(p => p.id === c.id))];
   const t = f.texto.toLowerCase();
@@ -2552,7 +2566,7 @@ const ESTADOS_VAC = { pendiente: 'Pendiente', aprobado: 'Aprobado', rechazado: '
 const empleadoPorId = id => cache.empleados.find(e => e.id === Number(id));
 const centroCod = id => cache.centros.find(c => c.id === Number(id))?.codigo || '';
 async function cargarEmpleados() {
-  cache.empleados = (puede('planilla.ver') || puede('vacaciones.aprobar')) ? await q(sb.from('empleados').select('*').order('nombre')) : [];
+  cache.empleados = (puede('planilla.ver') || puede('vacaciones.aprobar')) ? await todas(sb.from('empleados').select('*').order('nombre')) : [];
   return cache.empleados;
 }
 const opcionesEmpleado = (sel, soloActivos = true) => cache.empleados.filter(e => !soloActivos || e.activo || e.id === Number(sel))
@@ -2566,7 +2580,7 @@ const incompleto = e => e.activo && (!Number(e.salario_mensual) || !e.cedula);
 let filtroEmp = { texto: '', estado: 'activos', tipo: '' };
 async function vColaboradores(m, arg) {
   await cargarCatalogos(); await cargarEmpleados();
-  const saldos = await q(sb.rpc('saldos_vacaciones'));
+  const saldos = await todas(sb.rpc('saldos_vacaciones'));
   const sv = id => saldos.find(s => Number(s.empleado_id) === id) || {};
   const f = filtroEmp, t = f.texto.toLowerCase();
   const filas = cache.empleados.filter(e => (f.estado === 'todos' || (f.estado === 'activos' ? e.activo : f.estado === 'incompletos' ? incompleto(e) : !e.activo))
@@ -2704,12 +2718,12 @@ async function vPlanilla(m, arg) {
   const P = await q(sb.from('planillas').select('*').eq('id', Number(arg)).maybeSingle());
   if (!P) { m.innerHTML = '<div class="aviso error">La planilla no existe o no tiene acceso.</div>'; return; }
   const [L, N, C, sal] = await Promise.all([
-    q(sb.from('planilla_lineas').select('*').eq('planilla_id', P.id)),
+    todas(sb.from('planilla_lineas').select('*').eq('planilla_id', P.id)),
     q(sb.from('planilla_novedades').select('*').eq('planilla_id', P.id).order('id')),
     q(sb.from('conceptos_planilla').select('*').order('tipo').order('nombre')),
-    q(sb.rpc('saldos_vacaciones'))
+    todas(sb.rpc('saldos_vacaciones'))
   ]);
-  const AHO = Object.fromEntries((await q(sb.rpc('resumen_ahorro')).catch(() => [])).map(x => [Number(x.empleado_id), Number(x.saldo)]));
+  const AHO = Object.fromEntries((await todas(sb.rpc('resumen_ahorro')).catch(() => [])).map(x => [Number(x.empleado_id), Number(x.saldo)]));
   L.sort((a, b) => (empleadoPorId(a.empleado_id)?.nombre || '').localeCompare(empleadoPorId(b.empleado_id)?.nombre || ''));
   const editable = P.estado === 'borrador' && puede('planilla.editar');
   const puedeAprobar = P.estado === 'por_aprobar' && puede('planilla.aprobar') && P.creado_por !== yo.id;
@@ -3028,8 +3042,8 @@ const TIPOS_BAJA = { venta: 'Venta', descarte: 'Descarte (dañado u obsoleto)', 
 async function cargarActivos() {
   const [cats, acts, res] = await Promise.all([
     q(sb.from('activos_categorias').select('*').order('nombre')),
-    q(sb.from('activos_fijos').select('*').order('codigo')),
-    q(sb.rpc('resumen_activos'))
+    todas(sb.from('activos_fijos').select('*').order('codigo')),
+    todas(sb.rpc('resumen_activos'))
   ]);
   const r = Object.fromEntries(res.map(x => [Number(x.activo_id), x]));
   acts.forEach(a => Object.assign(a, { acumulada: Number(r[a.id]?.dep_acumulada || 0), libros: Number(r[a.id]?.valor_libros || 0), cuota: Number(r[a.id]?.cuota_mensual || 0), restantes: r[a.id]?.meses_restantes }));
@@ -3198,7 +3212,7 @@ async function vDepreciacion(m, arg) {
     async dl => { const id = await q(sb.rpc('registrar_depreciacion', { p_anio: Number($('[name=anio]', dl).value), p_mes: Number($('[name=mes]', dl).value) })); avisar('Depreciación registrada y contabilizada'); if (location.hash !== '#depreciacion') location.hash = 'depreciacion'; else vDepreciacion(m); },
     { textoGuardar: 'Registrar y contabilizar' });
     const prev = async () => {
-      const r = await q(sb.rpc('calcular_depreciacion', { p_anio: Number($('[name=anio]', d).value), p_mes: Number($('[name=mes]', d).value) })).catch(() => []);
+      const r = await todas(sb.rpc('calcular_depreciacion', { p_anio: Number($('[name=anio]', d).value), p_mes: Number($('[name=mes]', d).value) })).catch(() => []);
       const tot = r.reduce((s, x) => s + Number(x.monto), 0);
       $('#prev-dep', d).innerHTML = r.length ? `<div class="envoltura" style="max-height:300px"><table><thead><tr><th>Activo</th><th class="num">Cuota</th></tr></thead><tbody>
         ${r.map(x => { const a = acts.find(z => z.id === Number(x.activo_id)) || {}; return `<tr><td>${esc(a.codigo)} · ${esc(a.nombre)}</td><td class="num">${fmt(x.monto)}</td></tr>`; }).join('')}
@@ -3217,7 +3231,7 @@ const TIPOS_AHO = { saldo_inicial_colaborador: 'Saldo inicial (colaborador)', sa
 async function vAhorro(m) {
   await cargarCatalogos(); await cargarEmpleados();
   const [res, movs, pars] = await Promise.all([
-    q(sb.rpc('resumen_ahorro')),
+    todas(sb.rpc('resumen_ahorro')),
     q(sb.from('ahorro_movimientos').select('*').order('fecha', { ascending: false }).order('id', { ascending: false }).limit(500)),
     q(sb.from('planilla_parametros').select('ahorro_afc_pct,ahorro_anios_retiro,vigente_desde').order('vigente_desde', { ascending: false }).limit(1))
   ]);
@@ -3288,7 +3302,7 @@ let pestVac = null;
 async function vVacaciones(m) {
   await cargarCatalogos(); await cargarEmpleados();
   const [saldos, pend, movs] = await Promise.all([
-    q(sb.rpc('saldos_vacaciones')),
+    todas(sb.rpc('saldos_vacaciones')),
     q(sb.from('vacaciones_movimientos').select('*').eq('tipo', 'dia_extra').eq('estado', 'pendiente').order('fecha')),
     q(sb.from('vacaciones_movimientos').select('*').order('fecha', { ascending: false }).order('id', { ascending: false }).limit(400))
   ]);
